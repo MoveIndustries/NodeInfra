@@ -193,8 +193,16 @@ resource "kubernetes_service" "hello_world" {
   depends_on = [kubernetes_deployment.hello_world]
 }
 
-# Data source for ELB hosted zone (for DNS alias)
-data "aws_elb_hosted_zone_id" "main" {}
+# Data source to get the actual load balancer details
+data "aws_lb" "hello_world" {
+  count = var.enable_dns && var.dns_zone_name != "" ? 1 : 0
+
+  tags = {
+    "kubernetes.io/service-name" = "${kubernetes_namespace.demo.metadata[0].name}/${kubernetes_service.hello_world.metadata[0].name}"
+  }
+
+  depends_on = [kubernetes_service.hello_world]
+}
 
 # Optional: DNS Record
 resource "aws_route53_record" "hello_world" {
@@ -205,10 +213,10 @@ resource "aws_route53_record" "hello_world" {
   type    = "A"
 
   alias {
-    name                   = kubernetes_service.hello_world.status[0].load_balancer[0].ingress[0].hostname
-    zone_id                = data.aws_elb_hosted_zone_id.main.id
+    name                   = data.aws_lb.hello_world[0].dns_name
+    zone_id                = data.aws_lb.hello_world[0].zone_id
     evaluate_target_health = true
   }
 
-  depends_on = [kubernetes_service.hello_world]
+  depends_on = [kubernetes_service.hello_world, data.aws_lb.hello_world]
 }

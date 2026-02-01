@@ -5,7 +5,7 @@ This example demonstrates the Movement validator infrastructure modules by deplo
 ## What This Creates
 
 - **VPC**: Isolated network with public/private subnets across 2 AZs
-- **EKS Cluster**: Kubernetes 1.31 cluster with 1 node
+- **EKS Cluster**: Kubernetes 1.35 cluster with 1 node
 - **Hello World App**: 2-replica HTTP echo service
 - **Load Balancer**: Public Network Load Balancer
 - **Optional DNS**: Route53 A record (if configured)
@@ -152,7 +152,7 @@ Running this example costs approximately:
 - Security groups for EKS and load balancers
 
 ### Compute Layer (module.eks)
-- EKS cluster (Kubernetes 1.31)
+- EKS cluster (Kubernetes 1.35)
 - Managed node group (1 t3.xlarge instance)
 - EBS CSI driver addon
 - IRSA (IAM Roles for Service Accounts)
