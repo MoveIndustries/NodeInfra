@@ -1,0 +1,44 @@
+# Pre-commit hooks for Terraform linting
+# Install with: pip install pre-commit && pre-commit install
+# Run manually: pre-commit run --all-files
+
+repos:
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: v1.88.4
+    hooks:
+      - id: terraform_fmt
+        name: Terraform fmt
+        description: Format Terraform files
+
+      - id: terraform_validate
+        name: Terraform validate
+        description: Validate Terraform files
+        exclude: ^examples/
+
+      - id: terraform_tflint
+        name: TFLint
+        description: Lint Terraform files with tflint
+        args:
+          - --args=--config=__GIT_WORKING_DIR__/.tflint.hcl
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+        name: Trim trailing whitespace
+        exclude: ^\.terraform/
+
+      - id: end-of-file-fixer
+        name: Fix end of files
+        exclude: ^\.terraform/
+
+      - id: check-yaml
+        name: Check YAML syntax
+        args: ['--unsafe']
+
+      - id: check-added-large-files
+        name: Check for large files
+        args: ['--maxkb=500']
+
+      - id: check-merge-conflict
+        name: Check for merge conflicts

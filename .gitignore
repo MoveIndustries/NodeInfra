@@ -35,3 +35,10 @@ override.tf.json
 # Ignore CLI configuration files
 .terraformrc
 terraform.rc
+examples/hello-world/terraform.tfvars
+
+# Linting tool directories
+.tflint.d/
+
+# Pre-commit
+.pre-commit-config.yaml.backup
