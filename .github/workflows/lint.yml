@@ -1,0 +1,67 @@
+name: Terraform Lint
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  terraform-lint:
+    name: Terraform Lint
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.0
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive .
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: latest
+
+      - name: Initialize TFLint
+        run: tflint --init
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Run TFLint on movement-network-base
+        run: |
+          cd terraform-modules/movement-network-base
+          tflint --config ../../.tflint.hcl
+
+      - name: Run TFLint on movement-validator-infra
+        run: |
+          cd terraform-modules/movement-validator-infra
+          tflint --config ../../.tflint.hcl
+
+      - name: Run TFLint on hello-world example
+        run: |
+          cd examples/hello-world
+          tflint --config ../../.tflint.hcl
+
+      - name: Terraform Validate - movement-network-base
+        run: |
+          cd terraform-modules/movement-network-base
+          terraform init -backend=false
+          terraform validate
+
+      - name: Terraform Validate - movement-validator-infra
+        run: |
+          cd terraform-modules/movement-validator-infra
+          terraform init -backend=false
+          terraform validate
+
+      - name: Terraform Validate - hello-world
+        run: |
+          cd examples/hello-world
+          terraform init -backend=false
+          terraform validate

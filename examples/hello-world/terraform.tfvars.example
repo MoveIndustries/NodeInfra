@@ -1,0 +1,30 @@
+# Example Terraform variables for hello-world deployment
+# Copy this file to terraform.tfvars and customize values
+
+# Validator name (used in resource naming)
+validator_name = "hello-world"
+
+# AWS region
+region = "us-east-1"
+
+# VPC CIDR block
+vpc_cidr = "10.0.0.0/20"
+
+# Kubernetes version
+kubernetes_version = "1.35"
+
+# Node instance types (t3.xlarge is sufficient for demo)
+node_instance_types = ["t3.xlarge"]
+
+# DNS configuration (optional)
+# Set to true if you have a Route53 hosted zone
+enable_dns = false
+dns_zone_name = ""  # e.g., "movementnetwork.xyz"
+
+# Resource tags
+tags = {
+  Project     = "movement-validator"
+  Environment = "demo"
+  Purpose     = "hello-world"
+  ManagedBy   = "Terraform"
+}
