@@ -1,0 +1,15 @@
+# Example configuration for public fullnode deployment
+
+validator_name = "public-fullnode"
+region         = "us-east-1"
+
+# Optional: override instance types and fullnode settings
+# node_instance_types = ["c6a.4xlarge"]
+# fullnode_network_name = "testnet"
+# fullnode_node_name    = "pfn-restore"
+# fullnode_storage_size = "500Gi"
+
+# Optional: Route53 DNS for the public fullnode
+# enable_dns        = true
+# dns_zone_name     = "movementnetwork.xyz"
+# fullnode_dns_name = "pfn.devnet.movementnetwork.xyz"
