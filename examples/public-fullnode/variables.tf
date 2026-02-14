@@ -46,6 +46,12 @@ variable "fullnode_id" {
   default     = "public-fullnode"
 }
 
+variable "fullnode_namespace" {
+  description = "Kubernetes namespace for the public fullnode deployment"
+  type        = string
+  default     = "movement-l1"
+}
+
 variable "fullnode_chain_id" {
   description = "Chain ID label for the fullnode"
   type        = string
@@ -73,7 +79,37 @@ variable "fullnode_storage_size" {
 variable "fullnode_storage_class" {
   description = "Storage class for fullnode PVC (leave empty for default)"
   type        = string
-  default     = "gp3"
+  default     = ""
+}
+
+variable "fullnode_data_dir" {
+  description = "Data directory for the fullnode inside the container"
+  type        = string
+  default     = "/opt/data/aptos"
+}
+
+variable "fullnode_bootstrap_s3_bucket" {
+  description = "S3 bucket containing existing blockchain data to bootstrap from"
+  type        = string
+  default     = ""
+}
+
+variable "fullnode_bootstrap_s3_prefix" {
+  description = "Optional prefix inside the S3 bucket for bootstrap data"
+  type        = string
+  default     = ""
+}
+
+variable "fullnode_bootstrap_s3_region" {
+  description = "AWS region for the bootstrap S3 bucket (defaults to var.region when empty)"
+  type        = string
+  default     = ""
+}
+
+variable "fullnode_service_account_name" {
+  description = "Service account name for the fullnode pod (IRSA/S3 access)"
+  type        = string
+  default     = ""
 }
 
 variable "fullnode_resources" {

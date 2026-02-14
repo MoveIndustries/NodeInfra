@@ -1,0 +1,108 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "movement-fullnode.fullname" . }}
+  labels:
+{{ include "movement-fullnode.labels" . | indent 4 }}
+spec:
+  serviceName: {{ include "movement-fullnode.fullname" . }}
+  replicas: 1
+  selector:
+    matchLabels:
+{{ include "movement-fullnode.selectorLabels" . | indent 6 }}
+  template:
+    metadata:
+      labels:
+{{ include "movement-fullnode.labels" . | indent 8 }}
+      annotations:
+        prometheus.io/scrape: {{ ternary "true" "false" .Values.service.enableMetrics | quote }}
+        prometheus.io/port: {{ .Values.service.ports.metrics | quote }}
+        prometheus.io/path: "/metrics"
+    spec:
+{{ $saName := "" }}
+{{ if .Values.serviceAccount.create }}
+{{ $saName = (.Values.serviceAccount.name | default (include "movement-fullnode.fullname" .)) }}
+{{ else if .Values.serviceAccount.name }}
+{{ $saName = .Values.serviceAccount.name }}
+{{ end }}
+{{ if $saName }}
+      serviceAccountName: {{ $saName | quote }}
+{{ end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 6180
+        runAsGroup: 6180
+        fsGroup: 6180
+      initContainers:
+        - name: genesis-setup
+          image: curlimages/curl:8.10.1
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -ex
+              mkdir -p /opt/data/genesis
+              curl -o /opt/data/genesis/genesis.blob https://raw.githubusercontent.com/movementlabsxyz/movement-networks/main/{{ .Values.node.network }}/genesis.blob
+              curl -o /opt/data/genesis/genesis_waypoint.txt https://raw.githubusercontent.com/movementlabsxyz/movement-networks/main/{{ .Values.node.network }}/genesis_waypoint.txt
+              curl -o /opt/data/genesis/waypoint.txt https://raw.githubusercontent.com/movementlabsxyz/movement-networks/main/{{ .Values.node.network }}/waypoint.txt
+          volumeMounts:
+            - name: aptos-data
+              mountPath: /opt/data
+{{ if .Values.bootstrap.enabled }}
+        - name: s3-bootstrap
+          image: public.ecr.aws/aws-cli/aws-cli:2.15.46
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              mkdir -p {{ .Values.dataDir }}
+              if ! aws s3 sync "{{ .Values.bootstrap.s3Uri }}" "{{ .Values.dataDir }}" --no-progress; then
+                echo "Signed S3 sync failed; retrying with --no-sign-request" >&2
+                aws s3 sync "{{ .Values.bootstrap.s3Uri }}" "{{ .Values.dataDir }}" --no-sign-request --no-progress
+              fi
+          env:
+            - name: HOME
+              value: "/tmp"
+            - name: AWS_EC2_METADATA_DISABLED
+              value: "true"
+{{ if .Values.bootstrap.region }}
+            - name: AWS_REGION
+              value: {{ .Values.bootstrap.region | quote }}
+            - name: AWS_DEFAULT_REGION
+              value: {{ .Values.bootstrap.region | quote }}
+{{ end }}
+          volumeMounts:
+            - name: aptos-data
+              mountPath: /opt/data
+{{ end }}
+      containers:
+        - name: fullnode
+          image: {{ printf "%s:%s" .Values.image.repository .Values.image.tag | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["--config", "/etc/aptos/fullnode.yaml"]
+          ports:
+            - name: api
+              containerPort: {{ .Values.service.ports.api }}
+              protocol: TCP
+            - name: p2p
+              containerPort: {{ .Values.service.ports.p2p }}
+              protocol: TCP
+{{ if .Values.service.enableMetrics }}
+            - name: metrics
+              containerPort: {{ .Values.service.ports.metrics }}
+              protocol: TCP
+{{ end }}
+          resources:
+{{ toYaml .Values.resources | indent 12 }}
+          volumeMounts:
+            - name: aptos-data
+              mountPath: /opt/data
+            - name: node-config
+              mountPath: /etc/aptos
+              readOnly: true
+      volumes:
+        - name: aptos-data
+          persistentVolumeClaim:
+            claimName: {{ include "movement-fullnode.fullname" . }}-data
+        - name: node-config
+          configMap:
+            name: {{ include "movement-fullnode.fullname" . }}-config

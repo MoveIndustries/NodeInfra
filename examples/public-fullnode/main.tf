@@ -3,6 +3,72 @@ provider "aws" {
   region = var.region
 }
 
+locals {
+  fullnode_bootstrap_enabled    = var.fullnode_bootstrap_s3_bucket != ""
+  fullnode_bootstrap_prefix     = trim(var.fullnode_bootstrap_s3_prefix, "/")
+  fullnode_bootstrap_object_arn = local.fullnode_bootstrap_prefix != "" ? "arn:aws:s3:::${var.fullnode_bootstrap_s3_bucket}/${local.fullnode_bootstrap_prefix}/*" : "arn:aws:s3:::${var.fullnode_bootstrap_s3_bucket}/*"
+  fullnode_service_account_name = var.fullnode_service_account_name != "" ? var.fullnode_service_account_name : (local.fullnode_bootstrap_enabled ? "${var.fullnode_id}-s3" : "")
+  fullnode_bootstrap_s3_uri      = local.fullnode_bootstrap_enabled ? "s3://${var.fullnode_bootstrap_s3_bucket}${local.fullnode_bootstrap_prefix != "" ? "/${local.fullnode_bootstrap_prefix}" : ""}" : ""
+  fullnode_bootstrap_region      = var.fullnode_bootstrap_s3_region != "" ? var.fullnode_bootstrap_s3_region : var.region
+  fullnode_service_account_enabled = local.fullnode_service_account_name != ""
+  fullnode_config_path           = "${path.module}/../../configs/${var.fullnode_network_name}.${var.fullnode_node_name}.yaml"
+  fullnode_config_inline         = templatefile(local.fullnode_config_path, { data_dir = var.fullnode_data_dir })
+  fullnode_helm_values = {
+    fullnameOverride = var.fullnode_id
+    node = {
+      id      = var.fullnode_id
+      network = var.fullnode_network_name
+      chainId = var.fullnode_chain_id
+    }
+    image = {
+      repository = var.fullnode_image.repository
+      tag        = var.fullnode_image.tag
+      pullPolicy = "IfNotPresent"
+    }
+    dataDir   = var.fullnode_data_dir
+    resources = var.fullnode_resources
+    storage = {
+      size      = var.fullnode_storage_size
+      className = var.fullnode_storage_class
+      create    = var.fullnode_storage_class == ""
+      parameters = {
+        type = "gp3"
+      }
+    }
+    service = {
+      type = "LoadBalancer"
+      annotations = {
+        "service.beta.kubernetes.io/aws-load-balancer-type"   = "nlb"
+        "service.beta.kubernetes.io/aws-load-balancer-scheme" = "internet-facing"
+      }
+      ports = {
+        api     = 8080
+        p2p     = 6182
+        metrics = 9101
+      }
+      enableMetrics = var.fullnode_enable_metrics
+    }
+    serviceAccount = {
+      create = local.fullnode_service_account_enabled
+      name   = local.fullnode_service_account_name
+      annotations = local.fullnode_bootstrap_enabled ? {
+        "eks.amazonaws.com/role-arn" = aws_iam_role.fullnode_s3[0].arn
+      } : {}
+      labels = {
+        purpose = "s3-bootstrap"
+      }
+    }
+    bootstrap = {
+      enabled = local.fullnode_bootstrap_enabled
+      s3Uri   = local.fullnode_bootstrap_s3_uri
+      region  = local.fullnode_bootstrap_region
+    }
+    config = {
+      inline = local.fullnode_config_inline
+    }
+  }
+}
+
 # Network Infrastructure
 module "network" {
   source = "../../terraform-modules/movement-network-base"
@@ -46,102 +112,57 @@ module "eks" {
   depends_on = [module.network]
 }
 
-# Configure Kubernetes Provider
-provider "kubernetes" {
-  host                   = module.eks.cluster_endpoint
-  cluster_ca_certificate = base64decode(module.eks.cluster_ca_certificate)
+# Optional: IRSA role + service account for S3 bootstrap
+data "aws_iam_policy_document" "fullnode_s3_assume" {
+  count = local.fullnode_bootstrap_enabled ? 1 : 0
 
-  exec {
-    api_version = "client.authentication.k8s.io/v1beta1"
-    command     = "aws"
-    args = [
-      "eks",
-      "get-token",
-      "--cluster-name",
-      module.eks.cluster_name,
-      "--region",
-      var.region
-    ]
-  }
-}
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
 
-# Default StorageClass (gp3)
-resource "kubernetes_storage_class" "gp3" {
-  metadata {
-    name = "gp3"
-    annotations = {
-      "storageclass.kubernetes.io/is-default-class" = "true"
+    principals {
+      type        = "Federated"
+      identifiers = [module.eks.oidc_provider_arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "${module.eks.oidc_provider_url}:sub"
+      values   = ["system:serviceaccount:${var.fullnode_namespace}:${local.fullnode_service_account_name}"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "${module.eks.oidc_provider_url}:aud"
+      values   = ["sts.amazonaws.com"]
     }
   }
-
-  storage_provisioner    = "ebs.csi.aws.com"
-  volume_binding_mode    = "WaitForFirstConsumer"
-  reclaim_policy         = "Delete"
-  allow_volume_expansion = true
-
-  parameters = {
-    type = "gp3"
-  }
-
-  depends_on = [module.eks]
 }
 
-# Namespace for public fullnode
-resource "kubernetes_namespace" "movement_l1" {
-  metadata {
-    name = "movement-l1"
-    labels = {
-      name    = "movement-l1"
-      purpose = "public-fullnode"
-    }
+data "aws_iam_policy_document" "fullnode_s3_read" {
+  count = local.fullnode_bootstrap_enabled ? 1 : 0
+
+  statement {
+    actions   = ["s3:GetBucketLocation", "s3:ListBucket"]
+    resources = ["arn:aws:s3:::${var.fullnode_bootstrap_s3_bucket}"]
   }
 
-  depends_on = [module.eks]
-}
-
-# Public Fullnode Deployment
-module "public_fullnode" {
-  source = "../../terraform-modules/kubernetes-aptos-node"
-
-  namespace    = kubernetes_namespace.movement_l1.metadata[0].name
-  network_name = var.fullnode_network_name
-  node_name    = var.fullnode_node_name
-  node_id      = var.fullnode_id
-  chain_id     = var.fullnode_chain_id
-
-  image          = var.fullnode_image
-  storage_size   = var.fullnode_storage_size
-  storage_class  = var.fullnode_storage_class
-  resources      = var.fullnode_resources
-  enable_metrics = var.fullnode_enable_metrics
-
-  depends_on = [kubernetes_namespace.movement_l1]
-}
-
-# Data source to get the actual load balancer details
-data "aws_lb" "public_fullnode" {
-  count = var.enable_dns && var.dns_zone_name != "" && var.fullnode_dns_name != "" ? 1 : 0
-
-  tags = {
-    "kubernetes.io/service-name" = "${kubernetes_namespace.movement_l1.metadata[0].name}/${module.public_fullnode.service_name}"
+  statement {
+    actions   = ["s3:GetObject"]
+    resources = [local.fullnode_bootstrap_object_arn]
   }
-
-  depends_on = [module.public_fullnode]
 }
 
-# Optional: DNS Record
-resource "aws_route53_record" "public_fullnode" {
-  count = var.enable_dns && var.dns_zone_name != "" && var.fullnode_dns_name != "" ? 1 : 0
+resource "aws_iam_role" "fullnode_s3" {
+  count = local.fullnode_bootstrap_enabled ? 1 : 0
 
-  zone_id = module.network.dns_zone_id
-  name    = var.fullnode_dns_name
-  type    = "A"
+  name               = "${var.validator_name}-fullnode-s3"
+  assume_role_policy = data.aws_iam_policy_document.fullnode_s3_assume[0].json
+  tags               = var.tags
+}
 
-  alias {
-    name                   = data.aws_lb.public_fullnode[0].dns_name
-    zone_id                = data.aws_lb.public_fullnode[0].zone_id
-    evaluate_target_health = true
-  }
+resource "aws_iam_role_policy" "fullnode_s3_read" {
+  count = local.fullnode_bootstrap_enabled ? 1 : 0
 
-  depends_on = [data.aws_lb.public_fullnode]
+  role   = aws_iam_role.fullnode_s3[0].id
+  policy = data.aws_iam_policy_document.fullnode_s3_read[0].json
 }
