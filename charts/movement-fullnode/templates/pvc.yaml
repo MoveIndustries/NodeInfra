@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "movement-fullnode.fullname" . }}-data
+  labels:
+{{ include "movement-fullnode.labels" . | indent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.storage.size | quote }}
+{{ $scName := include "movement-fullnode.storageClassName" . }}
+{{ if $scName }}
+  storageClassName: {{ $scName | quote }}
+{{ end }}

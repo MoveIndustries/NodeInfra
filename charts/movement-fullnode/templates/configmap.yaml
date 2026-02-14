@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "movement-fullnode.fullname" . }}-config
+  labels:
+{{ include "movement-fullnode.labels" . | indent 4 }}
+data:
+  fullnode.yaml: |-
+{{ if .Values.config.inline }}
+{{ tpl .Values.config.inline . | indent 4 }}
+{{ else }}
+{{ tpl (.Files.Get "files/fullnode.yaml") . | indent 4 }}
+{{ end }}
