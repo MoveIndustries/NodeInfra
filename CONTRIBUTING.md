@@ -105,8 +105,9 @@ terraform init
 terraform plan
 
 # Run integration tests
-cd tests/integration
-./test-hello-world.sh
+cd ../..
+poetry install --no-root
+poetry run python tests/integration/test_public_fullnode.py
 ```
 
 ### 5. Commit and Push
@@ -193,8 +194,8 @@ terraform plan
 Run the full integration test suite:
 
 ```bash
-cd tests/integration
-./test-hello-world.sh
+poetry install --no-root
+poetry run python tests/integration/test_public_fullnode.py
 ```
 
 This will:

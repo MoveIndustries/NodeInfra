@@ -28,68 +28,20 @@ variable "node_instance_types" {
   default     = ["c6a.4xlarge"]
 }
 
-variable "fullnode_network_name" {
-  description = "Network name used for fullnode config selection"
-  type        = string
-  default     = "testnet"
-}
-
-variable "fullnode_node_name" {
-  description = "Fullnode config name (e.g., pfn-restore)"
-  type        = string
-  default     = "pfn-restore"
-}
-
 variable "fullnode_id" {
-  description = "Fullnode resource name"
+  description = "Recommended Helm release/fullnode resource name"
   type        = string
   default     = "public-fullnode"
 }
 
 variable "fullnode_namespace" {
-  description = "Kubernetes namespace for the public fullnode deployment"
+  description = "Kubernetes namespace used by the Helm release"
   type        = string
   default     = "movement-l1"
 }
 
-variable "fullnode_chain_id" {
-  description = "Chain ID label for the fullnode"
-  type        = string
-  default     = ""
-}
-
-variable "fullnode_image" {
-  description = "Fullnode image repository and tag"
-  type = object({
-    repository = string
-    tag        = string
-  })
-  default = {
-    repository = "ghcr.io/movementlabsxyz/aptos-node"
-    tag        = "latest"
-  }
-}
-
-variable "fullnode_storage_size" {
-  description = "Fullnode persistent volume size"
-  type        = string
-  default     = "500Gi"
-}
-
-variable "fullnode_storage_class" {
-  description = "Storage class for fullnode PVC (leave empty for default)"
-  type        = string
-  default     = ""
-}
-
-variable "fullnode_data_dir" {
-  description = "Data directory for the fullnode inside the container"
-  type        = string
-  default     = "/opt/data/aptos"
-}
-
 variable "fullnode_bootstrap_s3_bucket" {
-  description = "S3 bucket containing existing blockchain data to bootstrap from"
+  description = "S3 bucket containing blockchain data used by workload bootstrap init container"
   type        = string
   default     = ""
 }
@@ -101,45 +53,15 @@ variable "fullnode_bootstrap_s3_prefix" {
 }
 
 variable "fullnode_bootstrap_s3_region" {
-  description = "AWS region for the bootstrap S3 bucket (defaults to var.region when empty)"
+  description = "AWS region for bootstrap S3 bucket (defaults to var.region when empty)"
   type        = string
   default     = ""
 }
 
 variable "fullnode_service_account_name" {
-  description = "Service account name for the fullnode pod (IRSA/S3 access)"
+  description = "Kubernetes ServiceAccount name used by Helm workload for IRSA"
   type        = string
   default     = ""
-}
-
-variable "fullnode_resources" {
-  description = "Kubernetes resource allocations for the fullnode"
-  type = object({
-    requests = object({
-      cpu    = string
-      memory = string
-    })
-    limits = object({
-      cpu    = string
-      memory = string
-    })
-  })
-  default = {
-    requests = {
-      cpu    = "4"
-      memory = "8Gi"
-    }
-    limits = {
-      cpu    = "8"
-      memory = "16Gi"
-    }
-  }
-}
-
-variable "fullnode_enable_metrics" {
-  description = "Expose metrics port on the public fullnode service"
-  type        = bool
-  default     = true
 }
 
 variable "tags" {

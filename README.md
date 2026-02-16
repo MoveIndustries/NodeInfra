@@ -62,11 +62,12 @@ NodeInfra/
 │   └── movement-validator-infra/# ✅ EKS cluster, nodes, IAM
 │
 ├── examples/                    # Example deployments
-│   └── hello-world/             # ✅ M1: Basic infrastructure demo
+│   ├── hello-world/             # ✅ M1: Basic infrastructure demo
+│   └── public-fullnode/         # ✅ M2: Two-stage infra+workload demo
 │
 ├── tests/                       # Integration tests
 │   └── integration/
-│       └── test-hello-world.sh  # ✅ M1 test suite
+│       └── test_public_fullnode.py # ✅ M2 two-stage e2e suite
 │
 └── docs/
     ├── MILESTONE_PLAN.md        # Detailed 4-milestone roadmap
@@ -207,8 +208,8 @@ All pull requests automatically run linting checks via GitHub Actions.
 Run integration tests:
 
 ```bash
-cd tests/integration
-./test-hello-world.sh
+poetry install --no-root
+poetry run python tests/integration/test_public_fullnode.py
 ```
 
 Validates:
@@ -225,6 +226,7 @@ Validates:
 - [Network Module](terraform-modules/movement-network-base/README.md)
 - [EKS Module](terraform-modules/movement-validator-infra/README.md)
 - [Hello World](examples/hello-world/README.md)
+- [Public Fullnode](examples/public-fullnode/README.md)
 
 ## Key Design Principles
 

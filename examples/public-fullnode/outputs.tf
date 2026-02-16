@@ -3,13 +3,8 @@ output "cluster_name" {
   value       = module.eks.cluster_name
 }
 
-output "public_fullnode_api_port" {
-  description = "Public fullnode API port"
-  value       = 8080
-}
-
 output "public_fullnode_namespace" {
-  description = "Namespace for the public fullnode"
+  description = "Namespace for the public fullnode Helm release"
   value       = var.fullnode_namespace
 }
 
@@ -24,13 +19,38 @@ output "public_fullnode_dns_name" {
 }
 
 output "public_fullnode_release_name" {
-  description = "Helm release name for the public fullnode"
+  description = "Recommended Helm release name for the public fullnode"
   value       = var.fullnode_id
 }
 
-output "public_fullnode_helm_values" {
-  description = "Helm values for the public fullnode release"
-  value       = yamlencode(local.fullnode_helm_values)
+output "region" {
+  description = "AWS region where infra was provisioned"
+  value       = var.region
+}
+
+output "fullnode_bootstrap_enabled" {
+  description = "Whether S3 bootstrap support was provisioned"
+  value       = local.fullnode_bootstrap_enabled
+}
+
+output "fullnode_bootstrap_s3_uri" {
+  description = "S3 URI workload should use for bootstrap (if enabled)"
+  value       = local.fullnode_bootstrap_s3_uri
+}
+
+output "fullnode_bootstrap_region" {
+  description = "S3 region workload should use for bootstrap (if enabled)"
+  value       = local.fullnode_bootstrap_region
+}
+
+output "fullnode_service_account_name" {
+  description = "ServiceAccount name workload should use for IRSA (if set)"
+  value       = local.fullnode_service_account_name
+}
+
+output "fullnode_s3_role_arn" {
+  description = "IAM role ARN workload should annotate on ServiceAccount (if enabled)"
+  value       = local.fullnode_bootstrap_enabled ? aws_iam_role.fullnode_s3[0].arn : ""
 }
 
 output "configure_kubectl" {

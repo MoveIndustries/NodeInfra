@@ -5,14 +5,14 @@ region         = "us-east-1"
 
 # Optional: override instance types and fullnode settings
 # node_instance_types = ["c6a.4xlarge"]
-# fullnode_network_name = "testnet"
-# fullnode_node_name    = "pfn-restore"
-# fullnode_storage_size = "500Gi"
+# fullnode_id           = "public-fullnode"
+# fullnode_namespace    = "movement-l1"
 
 # Optional: bootstrap fullnode data from S3
 # fullnode_bootstrap_s3_bucket = "my-aptos-snapshots"
 # fullnode_bootstrap_s3_prefix = "testnet/fullnode"
 # fullnode_bootstrap_s3_region = "us-east-1"
+# fullnode_service_account_name = "public-fullnode-s3"
 
 # Optional: Route53 DNS for the public fullnode
 # enable_dns        = true
