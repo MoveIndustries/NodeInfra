@@ -4,69 +4,13 @@ provider "aws" {
 }
 
 locals {
-  fullnode_bootstrap_enabled    = var.fullnode_bootstrap_s3_bucket != ""
-  fullnode_bootstrap_prefix     = trim(var.fullnode_bootstrap_s3_prefix, "/")
-  fullnode_bootstrap_object_arn = local.fullnode_bootstrap_prefix != "" ? "arn:aws:s3:::${var.fullnode_bootstrap_s3_bucket}/${local.fullnode_bootstrap_prefix}/*" : "arn:aws:s3:::${var.fullnode_bootstrap_s3_bucket}/*"
-  fullnode_service_account_name = var.fullnode_service_account_name != "" ? var.fullnode_service_account_name : (local.fullnode_bootstrap_enabled ? "${var.fullnode_id}-s3" : "")
-  fullnode_bootstrap_s3_uri      = local.fullnode_bootstrap_enabled ? "s3://${var.fullnode_bootstrap_s3_bucket}${local.fullnode_bootstrap_prefix != "" ? "/${local.fullnode_bootstrap_prefix}" : ""}" : ""
-  fullnode_bootstrap_region      = var.fullnode_bootstrap_s3_region != "" ? var.fullnode_bootstrap_s3_region : var.region
+  fullnode_bootstrap_enabled       = var.fullnode_bootstrap_s3_bucket != ""
+  fullnode_bootstrap_prefix        = trim(var.fullnode_bootstrap_s3_prefix, "/")
+  fullnode_bootstrap_object_arn    = local.fullnode_bootstrap_prefix != "" ? "arn:aws:s3:::${var.fullnode_bootstrap_s3_bucket}/${local.fullnode_bootstrap_prefix}/*" : "arn:aws:s3:::${var.fullnode_bootstrap_s3_bucket}/*"
+  fullnode_bootstrap_s3_uri        = local.fullnode_bootstrap_enabled ? "s3://${var.fullnode_bootstrap_s3_bucket}${local.fullnode_bootstrap_prefix != "" ? "/${local.fullnode_bootstrap_prefix}" : ""}" : ""
+  fullnode_bootstrap_region        = var.fullnode_bootstrap_s3_region != "" ? var.fullnode_bootstrap_s3_region : var.region
+  fullnode_service_account_name    = var.fullnode_service_account_name != "" ? var.fullnode_service_account_name : (local.fullnode_bootstrap_enabled ? "${var.fullnode_id}-s3" : "")
   fullnode_service_account_enabled = local.fullnode_service_account_name != ""
-  fullnode_config_path           = "${path.module}/../../configs/${var.fullnode_network_name}.${var.fullnode_node_name}.yaml"
-  fullnode_config_inline         = templatefile(local.fullnode_config_path, { data_dir = var.fullnode_data_dir })
-  fullnode_helm_values = {
-    fullnameOverride = var.fullnode_id
-    node = {
-      id      = var.fullnode_id
-      network = var.fullnode_network_name
-      chainId = var.fullnode_chain_id
-    }
-    image = {
-      repository = var.fullnode_image.repository
-      tag        = var.fullnode_image.tag
-      pullPolicy = "IfNotPresent"
-    }
-    dataDir   = var.fullnode_data_dir
-    resources = var.fullnode_resources
-    storage = {
-      size      = var.fullnode_storage_size
-      className = var.fullnode_storage_class
-      create    = var.fullnode_storage_class == ""
-      parameters = {
-        type = "gp3"
-      }
-    }
-    service = {
-      type = "LoadBalancer"
-      annotations = {
-        "service.beta.kubernetes.io/aws-load-balancer-type"   = "nlb"
-        "service.beta.kubernetes.io/aws-load-balancer-scheme" = "internet-facing"
-      }
-      ports = {
-        api     = 8080
-        p2p     = 6182
-        metrics = 9101
-      }
-      enableMetrics = var.fullnode_enable_metrics
-    }
-    serviceAccount = {
-      create = local.fullnode_service_account_enabled
-      name   = local.fullnode_service_account_name
-      annotations = local.fullnode_bootstrap_enabled ? {
-        "eks.amazonaws.com/role-arn" = aws_iam_role.fullnode_s3[0].arn
-      } : {}
-      labels = {
-        purpose = "s3-bootstrap"
-      }
-    }
-    bootstrap = {
-      enabled = local.fullnode_bootstrap_enabled
-      s3Uri   = local.fullnode_bootstrap_s3_uri
-      region  = local.fullnode_bootstrap_region
-    }
-    config = {
-      inline = local.fullnode_config_inline
-    }
-  }
 }
 
 # Network Infrastructure

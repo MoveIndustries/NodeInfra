@@ -24,7 +24,7 @@ resources:
 storage:
   size: "500Gi"
   className: ""
-  create: false
+  create: true
   parameters:
     type: "gp3"
 

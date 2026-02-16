@@ -71,7 +71,9 @@ lint: fmt-check tflint validate
 # Run integration tests
 test:
 	@echo "Running integration tests..."
-	@cd tests/integration && ./test-hello-world.sh
+	@command -v poetry >/dev/null || (echo "✗ poetry is required. Install from https://python-poetry.org/docs/" && exit 1)
+	@poetry install --no-interaction --no-root
+	@unset STATE_PATH; poetry run python tests/integration/test_public_fullnode.py
 
 # Clean up temporary files
 clean:

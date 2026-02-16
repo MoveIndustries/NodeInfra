@@ -42,3 +42,21 @@ examples/hello-world/terraform.tfvars
 
 # Pre-commit
 .pre-commit-config.yaml.backup
+
+# Python
+.venv/
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Environment files (may contain sensitive data)
+.env
+.env.local
+.env.*.local
