@@ -19,7 +19,7 @@ from tools import ClusterManager, run_deployment_cli
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT_DIR = SCRIPT_DIR.parents[1]
-CHART_DIR = ROOT_DIR / "charts" / "movement-fullnode"
+CHART_DIR = ROOT_DIR / "charts" / "movement-node"
 DEFAULT_CONFIG = ROOT_DIR / "configs" / "testnet.pfn-restore.yaml"
 
 
@@ -75,26 +75,41 @@ def build_helm_config(env_vars: dict, outputs: dict) -> dict:
     release_name = outputs.get("public_fullnode_release_name", "public-fullnode")
     service_name = outputs.get("public_fullnode_service_name", env_vars.get("FULLNODE_SERVICE_NAME", "public-fullnode"))
     
-    # Base Helm values
+    # Base Helm values for movement-node chart
     set_values = {
-        "fullnameOverride": service_name,
-        "node.id": service_name,
+        "node.type": "fullnode",
+        "node.name": service_name,
+        "network.name": env_vars.get("NETWORK_NAME", "testnet"),
+        "network.chainId": env_vars.get("CHAIN_ID", "126"),
         "storage.create": "true",
+        "storage.storageClassName": "gp3",
         "storage.parameters.type": "gp3",
+        "storage.parameters.iops": "6000",
+        "storage.parameters.throughput": "500",
     }
     
     # Add bootstrap if enabled
     if outputs.get("fullnode_bootstrap_enabled"):
+        # Parse S3 URI to extract bucket and prefix
+        s3_uri = outputs["fullnode_bootstrap_s3_uri"]
+        if s3_uri.startswith("s3://"):
+            s3_uri = s3_uri[5:]
+        parts = s3_uri.split("/", 1)
+        bucket = parts[0]
+        prefix = parts[1] if len(parts) > 1 else ""
+        
         set_values.update({
             "bootstrap.enabled": "true",
-            "bootstrap.s3Uri": outputs["fullnode_bootstrap_s3_uri"],
-            "bootstrap.region": outputs["fullnode_bootstrap_region"],
+            "bootstrap.s3.bucket": bucket,
+            "bootstrap.s3.prefix": prefix,
+            "bootstrap.s3.region": outputs["fullnode_bootstrap_region"],
             "serviceAccount.create": "true",
             "serviceAccount.name": outputs["fullnode_service_account_name"],
             "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn": outputs["fullnode_s3_role_arn"],
         })
     else:
         set_values["bootstrap.enabled"] = "false"
+        set_values["genesis.enabled"] = "true"  # Use genesis if no bootstrap
     
     return {
         "namespace": namespace,

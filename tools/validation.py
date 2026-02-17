@@ -79,8 +79,18 @@ def wait_for_pod_ready(
                     info(f"✅ Pod {pod_name} is ready")
                     return
             
-            # Show pod status
-            print(f"  Pod {pod_name}: phase={phase}")
+            # Show pod status with init container details
+            if phase == "Pending" and pod.status.init_container_statuses:
+                for init_status in pod.status.init_container_statuses:
+                    if init_status.state.running:
+                        print(f"  Pod {pod_name}: Init container '{init_status.name}' is running")
+                    elif init_status.state.waiting:
+                        reason = init_status.state.waiting.reason if init_status.state.waiting.reason else "Unknown"
+                        print(f"  Pod {pod_name}: Init container '{init_status.name}' waiting: {reason}")
+                    elif init_status.state.terminated:
+                        print(f"  Pod {pod_name}: Init container '{init_status.name}' completed")
+            else:
+                print(f"  Pod {pod_name}: phase={phase}")
             
             # Check for failed state
             if phase == "Failed":

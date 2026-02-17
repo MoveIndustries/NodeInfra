@@ -87,11 +87,13 @@ SERVICE_NAME=$(terraform -chdir=examples/public-fullnode output -raw public_full
 
 aws eks update-kubeconfig --region "$REGION" --name "$CLUSTER_NAME"
 
-helm upgrade --install "$RELEASE_NAME" ./charts/movement-fullnode \
+helm upgrade --install "$RELEASE_NAME" ./charts/movement-node \
   --namespace "$NAMESPACE" \
   --create-namespace \
-  --set fullnameOverride="$SERVICE_NAME" \
-  --set node.id="$SERVICE_NAME" \
+  --set node.type=fullnode \
+  --set node.name="$SERVICE_NAME" \
+  --set network.name=testnet \
+  --set network.chainId=126 \
   --set-file config.inline=./configs/testnet.pfn-restore.yaml
 ```
 
@@ -103,18 +105,25 @@ S3_ROLE_ARN=$(terraform -chdir=examples/public-fullnode output -raw fullnode_s3_
 S3_URI=$(terraform -chdir=examples/public-fullnode output -raw fullnode_bootstrap_s3_uri)
 S3_REGION=$(terraform -chdir=examples/public-fullnode output -raw fullnode_bootstrap_region)
 
-helm upgrade --install "$RELEASE_NAME" ./charts/movement-fullnode \
+# Parse S3 URI
+S3_BUCKET=$(echo "$S3_URI" | sed 's|s3://||' | cut -d'/' -f1)
+S3_PREFIX=$(echo "$S3_URI" | sed 's|s3://||' | cut -d'/' -f2-)
+
+helm upgrade --install "$RELEASE_NAME" ./charts/movement-node \
   --namespace "$NAMESPACE" \
   --create-namespace \
-  --set fullnameOverride="$SERVICE_NAME" \
-  --set node.id="$SERVICE_NAME" \
+  --set node.type=fullnode \
+  --set node.name="$SERVICE_NAME" \
+  --set network.name=testnet \
+  --set network.chainId=126 \
   --set-file config.inline=./configs/testnet.pfn-restore.yaml \
   --set serviceAccount.create=true \
   --set serviceAccount.name="$SERVICE_ACCOUNT_NAME" \
   --set serviceAccount.annotations.eks\.amazonaws\.com/role-arn="$S3_ROLE_ARN" \
   --set bootstrap.enabled=true \
-  --set bootstrap.s3Uri="$S3_URI" \
-  --set bootstrap.region="$S3_REGION"
+  --set bootstrap.s3.bucket="$S3_BUCKET" \
+  --set bootstrap.s3.prefix="$S3_PREFIX" \
+  --set bootstrap.s3.region="$S3_REGION"
 ```
 
 ## Cleanup
