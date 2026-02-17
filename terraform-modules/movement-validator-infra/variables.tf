@@ -45,7 +45,7 @@ variable "node_security_group_id" {
 variable "node_instance_types" {
   description = "EC2 instance types for nodes"
   type        = list(string)
-  default     = ["c6a.4xlarge"]
+  default     = ["r6a.xlarge", "r6i.xlarge", "m6a.2xlarge"]  # Memory-optimized: 4 vCPU/32GB or 8 vCPU/32GB
 }
 
 variable "node_desired_size" {

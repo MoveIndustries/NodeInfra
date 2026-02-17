@@ -1,0 +1,112 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "movement-node.fullname" . }}
+  labels:
+    {{- include "movement-node.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "movement-node.fullname" . }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "movement-node.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "movement-node.labels" . | nindent 8 }}
+      annotations:
+        prometheus.io/scrape: {{ ternary "true" "false" .Values.monitoring.enabled | quote }}
+        prometheus.io/port: {{ .Values.monitoring.metricsPort | quote }}
+        prometheus.io/path: "/metrics"
+    spec:
+      {{- if .Values.serviceAccount.create }}
+      serviceAccountName: {{ .Values.serviceAccount.name | default (include "movement-node.fullname" .) }}
+      {{- else if .Values.serviceAccount.name }}
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.securityContext | nindent 8 }}
+      {{- if .Values.genesis.enabled }}
+      initContainers:
+        - name: genesis-setup
+          image: curlimages/curl:8.10.1
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -ex
+              mkdir -p /opt/data/genesis
+              curl -o /opt/data/genesis/genesis.blob https://raw.githubusercontent.com/movementlabsxyz/movement-networks/main/{{ .Values.network.name }}/genesis.blob
+              curl -o /opt/data/genesis/genesis_waypoint.txt https://raw.githubusercontent.com/movementlabsxyz/movement-networks/main/{{ .Values.network.name }}/genesis_waypoint.txt
+              curl -o /opt/data/genesis/waypoint.txt https://raw.githubusercontent.com/movementlabsxyz/movement-networks/main/{{ .Values.network.name }}/waypoint.txt
+          volumeMounts:
+            - name: data
+              mountPath: /opt/data
+      {{- end }}
+      {{- if .Values.bootstrap.enabled }}
+        - name: s3-bootstrap
+          image: public.ecr.aws/aws-cli/aws-cli:2.15.46
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              mkdir -p /opt/data/db
+              S3_URI="s3://{{ .Values.bootstrap.s3.bucket }}/{{ .Values.bootstrap.s3.prefix }}"
+              if ! aws s3 sync "${S3_URI}" "/opt/data/db" --no-progress; then
+                echo "Signed S3 sync failed; retrying with --no-sign-request" >&2
+                aws s3 sync "${S3_URI}" "/opt/data/db" --no-sign-request --no-progress
+              fi
+          env:
+            - name: HOME
+              value: "/tmp"
+            - name: AWS_EC2_METADATA_DISABLED
+              value: "true"
+            {{- if .Values.bootstrap.s3.region }}
+            - name: AWS_REGION
+              value: {{ .Values.bootstrap.s3.region | quote }}
+            - name: AWS_DEFAULT_REGION
+              value: {{ .Values.bootstrap.s3.region | quote }}
+            {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /opt/data
+      {{- end }}
+      containers:
+        - name: {{ .Values.node.type }}
+          image: {{ printf "%s:%s" .Values.image.repository .Values.image.tag | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["--config", "/etc/aptos/node.yaml"]
+          ports:
+            - name: api
+              containerPort: {{ .Values.service.ports.api }}
+              protocol: TCP
+            - name: p2p
+              containerPort: {{ .Values.service.ports.p2p }}
+              protocol: TCP
+            {{- if .Values.monitoring.enabled }}
+            - name: metrics
+              containerPort: {{ .Values.monitoring.metricsPort }}
+              protocol: TCP
+            {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /opt/data
+            - name: config
+              mountPath: /etc/aptos
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "movement-node.fullname" . }}-config
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "movement-node.labels" . | nindent 10 }}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ .Values.storage.storageClassName }}
+        resources:
+          requests:
+            storage: {{ .Values.storage.size }}

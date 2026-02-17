@@ -1,0 +1,16 @@
+apiVersion: v2
+name: movement-node
+description: Unified Helm chart for Movement Network nodes (Validator, VFN, Full Node)
+type: application
+version: 0.1.0
+appVersion: "1.0"
+keywords:
+  - movement
+  - blockchain
+  - validator
+  - fullnode
+  - vfn
+home: https://movementlabs.xyz
+maintainers:
+  - name: Movement Labs
+    email: engineering@movementlabs.xyz

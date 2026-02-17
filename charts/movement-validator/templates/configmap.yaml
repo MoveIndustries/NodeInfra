@@ -1,0 +1,73 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "movement-validator.fullname" . }}-config
+  namespace: {{ include "movement-validator.namespace" . }}
+  labels:
+    {{- include "movement-validator.labels" . | nindent 4 }}
+data:
+  validator.yaml: |
+    base:
+      role: "validator"
+      data_dir: "/opt/data/aptos"
+      waypoint:
+        from_file: "/opt/data/genesis/waypoint.txt"
+
+    consensus:
+      safety_rules:
+        service:
+          type: "local"
+        backend:
+          type: "on_disk_storage"
+          path: secure-data.json
+          namespace: ~
+        initial_safety_rules_config:
+          from_file:
+            waypoint:
+              from_file: /opt/data/genesis/waypoint.txt
+            identity_blob_path: /opt/data/genesis/validator-identity.yaml
+
+    execution:
+      genesis_file_location: "/opt/data/genesis/genesis.blob"
+
+    storage:
+      rocksdb_configs:
+        enable_storage_sharding: false
+      storage_pruner_config:
+        ledger_pruner_config:
+          enable: false
+
+    validator_network:
+      discovery_method: "onchain"
+      mutual_authentication: true
+      identity:
+        type: "from_file"
+        path: /opt/data/genesis/validator-identity.yaml
+      listen_address: "/ip4/0.0.0.0/tcp/6180"
+
+    {{- if .Values.vfn.enabled }}
+    full_node_networks:
+    - network_id:
+        private: "vfn"
+      listen_address: "/ip4/0.0.0.0/tcp/6181"
+      identity:
+        type: "from_config"
+        key: "{{ .Values.vfn.key }}"
+        peer_id: "{{ .Values.vfn.peerId }}"
+    {{- end }}
+
+    api:
+      enabled: true
+      address: "0.0.0.0:8080"
+
+    admin_service:
+      enabled: true
+      address: 127.0.0.1
+      port: 9102
+
+    state_sync:
+      state_sync_driver:
+        bootstrapping_mode: ExecuteOrApplyFromGenesis
+        continuous_syncing_mode: ExecuteTransactionsOrApplyOutputs
+        enable_auto_bootstrapping: true
+        max_connection_deadline_secs: 1

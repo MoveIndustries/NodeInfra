@@ -1,0 +1,156 @@
+# Default values for movement-node
+# This chart can deploy: Validator, VFN (Validator Full Node), or Full Node
+
+# Node configuration
+node:
+  # Node type: "validator", "vfn", or "fullnode"
+  type: "fullnode"
+  name: "node-01"
+
+# Container image configuration
+image:
+  repository: ghcr.io/movementlabsxyz/aptos-node
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+# Network configuration
+network:
+  name: "testnet"
+  chainId: "126"
+
+# Data directory (matches S3 bootstrap location)
+dataDir: "/opt/data"
+
+# Genesis configuration (for validator and VFN)
+genesis:
+  enabled: true  # Auto-enabled for validator/vfn, can be disabled for fullnode with S3 bootstrap
+  repository: "movementlabsxyz/movement-networks"
+  branch: "main"
+
+# Bootstrap configuration (for fullnode with S3)
+bootstrap:
+  enabled: false  # Enable for fullnode with S3 restore
+  s3:
+    bucket: ""
+    prefix: ""
+    region: "us-east-1"
+
+# Validator-specific configuration (only used when node.type=validator)
+validator:
+  # Identity configuration
+  identity:
+    createSecret: false
+    existingSecret: "validator-identity"
+  
+  # VFN connection configuration
+  vfn:
+    enabled: true
+    key: "b0f405a3e75516763c43a2ae1d70423699f34cd68fa9f8c6bb2d67aa87d0af69"
+    peerId: "00000000000000000000000000000000d58bc7bb154b38039bc9096ce04e1237"
+
+# VFN-specific configuration (only used when node.type=vfn)
+vfn:
+  # Upstream validator connection
+  validator:
+    serviceName: "validator-01"
+    namespace: "movement-l1"
+    peerId: "00000000000000000000000000000000d58bc7bb154b38039bc9096ce04e1237"
+    port: 6181
+  
+  # Public fullnode network identity
+  fullnode:
+    enabled: true
+    publicKey: "18FD979E14162B541B874490D47BD26BC94A398429337C536C48F5E9C8708D7B"
+    peerId: "9967ebf40ac8c2ccb38709488952da1826176584ea3067b63b1695362ecb3d1f"
+
+# Fullnode-specific configuration (only used when node.type=fullnode)
+fullnode:
+  # Upstream connection (VFN or seed nodes)
+  seeds:
+    - peerId: "9967ebf40ac8c2ccb38709488952da1826176584ea3067b63b1695362ecb3d1f"
+      addresses:
+        - "/dns/vfn-01.movement-l1.svc.cluster.local/tcp/6182/noise-ik/9967ebf40ac8c2ccb38709488952da1826176584ea3067b63b1695362ecb3d1f/handshake/0"
+
+# Resource requests and limits
+# Sized for r6a.xlarge (4 vCPU, 32GB) or m6a.2xlarge (8 vCPU, 32GB)
+resources:
+  requests:
+    cpu: "3"        # Request 3 CPUs (fits on 4 vCPU instance)
+    memory: "28Gi"  # Request 28GB RAM (fits on 32GB instance)
+  limits:
+    cpu: "4"        # Limit to 4 CPUs (full instance on r6a.xlarge)
+    memory: "30Gi"  # Limit to 30GB RAM (leaves 2GB for system)
+
+# Persistent storage configuration
+storage:
+  create: false  # Set to true to create a custom StorageClass
+  size: "2000Gi"  # 2TB default for blockchain data
+  storageClassName: "gp3"
+  parameters:
+    type: "gp3"
+    iops: "6000"
+    throughput: "500"
+
+# Service configuration
+service:
+  # Service type: ClusterIP for validator, LoadBalancer for vfn/fullnode
+  # Auto-configured based on node.type unless overridden
+  type: ""  # Leave empty for auto-config
+  ports:
+    api: 8080
+    metrics: 9101
+    admin: 9102
+    p2p: 6182  # Public P2P port (fullnode network)
+    vfn: 6181  # Private VFN port (validator <-> vfn)
+    validator: 6180  # Validator network port
+
+# Load balancer configuration (for vfn and fullnode)
+loadBalancer:
+  # Auto-enabled for vfn and fullnode
+  enabled: false  # Leave false for auto-config
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+
+# Monitoring configuration
+monitoring:
+  enabled: true
+  metricsPort: 9101
+
+# Liveness and readiness probes
+probes:
+  liveness:
+    enabled: true
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readiness:
+    enabled: true
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+# Node affinity and tolerations
+affinity: {}
+tolerations: []
+nodeSelector: {}
+
+# Security context
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+# Service account
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Additional labels
+labels: {}
+
+# Additional annotations
+annotations: {}
