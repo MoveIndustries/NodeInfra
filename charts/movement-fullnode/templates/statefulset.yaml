@@ -54,10 +54,10 @@ spec:
           args:
             - |
               set -euo pipefail
-              mkdir -p {{ .Values.dataDir }}
-              if ! aws s3 sync "{{ .Values.bootstrap.s3Uri }}" "{{ .Values.dataDir }}" --no-progress; then
+              mkdir -p {{ .Values.dataDir }}/db
+              if ! aws s3 sync "{{ .Values.bootstrap.s3Uri }}" "{{ .Values.dataDir }}/db" --no-progress; then
                 echo "Signed S3 sync failed; retrying with --no-sign-request" >&2
-                aws s3 sync "{{ .Values.bootstrap.s3Uri }}" "{{ .Values.dataDir }}" --no-sign-request --no-progress
+                aws s3 sync "{{ .Values.bootstrap.s3Uri }}" "{{ .Values.dataDir }}/db" --no-sign-request --no-progress
               fi
           env:
             - name: HOME

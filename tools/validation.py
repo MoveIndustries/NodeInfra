@@ -164,6 +164,7 @@ def validate_deployment(
     pod_timeout: int = 3600,
     lb_retries: int = 60,
     interval: int = 10,
+    validate_api: bool = True,
     kubeconfig_path: Optional[Path] = None,
 ) -> None:
     """
@@ -175,6 +176,7 @@ def validate_deployment(
         pod_timeout: Timeout for pod readiness in seconds
         lb_retries: Number of retries for LoadBalancer check
         interval: Check interval in seconds
+        validate_api: Whether to validate LoadBalancer and API health (default: True)
         kubeconfig_path: Optional path to kubeconfig
         
     Raises:
@@ -191,13 +193,14 @@ def validate_deployment(
         kubeconfig_path=kubeconfig_path
     )
     
-    # Wait for LoadBalancer and API health
-    wait_for_loadbalancer_and_api(
-        namespace=namespace,
-        service_name=service_name,
-        retries=lb_retries,
-        interval=interval,
-        kubeconfig_path=kubeconfig_path
-    )
+    # Optionally wait for LoadBalancer and API health
+    if validate_api:
+        wait_for_loadbalancer_and_api(
+            namespace=namespace,
+            service_name=service_name,
+            retries=lb_retries,
+            interval=interval,
+            kubeconfig_path=kubeconfig_path
+        )
     
     info("✅ Deployment validation passed")
