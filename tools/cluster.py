@@ -118,9 +118,7 @@ class ClusterManager:
             create_namespace=True,
         )
         
-        success("Deployment completed successfully!")
-        
-        # Print deployment information
+        # Print deployment information (before validation)
         self._print_deployment_info(
             cluster_name=cluster_name,
             region=region,
@@ -130,19 +128,21 @@ class ClusterManager:
             outputs=outputs,
         )
         
-        # Validate deployment if requested
-        if validate:
-            pod_timeout = int(env_vars.get("POD_READY_TIMEOUT", "3600"))
-            max_retries = int(env_vars.get("MAX_RETRIES", "60"))
-            retry_interval = int(env_vars.get("RETRY_INTERVAL", "10"))
-            
-            validate_deployment(
-                namespace=namespace,
-                service_name=service_name,
-                pod_timeout=pod_timeout,
-                lb_retries=max_retries,
-                interval=retry_interval,
-            )
+        # Validate deployment (always wait for pod ready, optionally validate API)
+        pod_timeout = int(env_vars.get("POD_READY_TIMEOUT", "3600"))
+        max_retries = int(env_vars.get("MAX_RETRIES", "60"))
+        retry_interval = int(env_vars.get("RETRY_INTERVAL", "10"))
+        
+        validate_deployment(
+            namespace=namespace,
+            service_name=service_name,
+            pod_timeout=pod_timeout,
+            lb_retries=max_retries,
+            interval=retry_interval,
+            validate_api=validate,
+        )
+        
+        success("Deployment completed successfully!")
         
         return {
             "cluster_name": cluster_name,
