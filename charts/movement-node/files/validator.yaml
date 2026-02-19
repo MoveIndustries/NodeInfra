@@ -1,6 +1,6 @@
 base:
   role: "validator"
-  data_dir: "/opt/data/aptos"
+  data_dir: "/opt/data"
   waypoint:
     from_file: "/opt/data/genesis/waypoint.txt"
 
@@ -56,7 +56,7 @@ admin_service:
 
 state_sync:
   state_sync_driver:
-    bootstrapping_mode: ExecuteOrApplyFromGenesis
+    bootstrapping_mode: ApplyTransactionOutputsFromGenesis
     continuous_syncing_mode: ExecuteTransactionsOrApplyOutputs
     enable_auto_bootstrapping: true
     max_connection_deadline_secs: 1

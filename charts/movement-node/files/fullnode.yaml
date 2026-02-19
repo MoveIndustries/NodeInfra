@@ -1,6 +1,6 @@
 base:
   role: "full_node"
-  data_dir: "{{ .Values.dataDir }}"
+  data_dir: "/opt/data"
   waypoint:
     from_file: "/opt/data/genesis/waypoint.txt"
 
@@ -33,5 +33,5 @@ api:
 
 state_sync:
   state_sync_driver:
-    bootstrapping_mode: DownloadLatestStates
+    bootstrapping_mode: ApplyTransactionOutputsFromGenesis
     continuous_syncing_mode: ApplyTransactionOutputs

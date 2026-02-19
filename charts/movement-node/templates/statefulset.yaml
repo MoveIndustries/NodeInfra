@@ -49,11 +49,11 @@ spec:
           args:
             - |
               set -euo pipefail
-              mkdir -p /opt/data/aptos/db
+              mkdir -p /opt/data/db
               S3_URI="s3://{{ .Values.bootstrap.s3.bucket }}/{{ .Values.bootstrap.s3.prefix }}"
-              if ! aws s3 sync "${S3_URI}" "/opt/data/aptos/db" --no-progress; then
+              if ! aws s3 sync "${S3_URI}" "/opt/data/db" --no-progress; then
                 echo "Signed S3 sync failed; retrying with --no-sign-request" >&2
-                aws s3 sync "${S3_URI}" "/opt/data/aptos/db" --no-sign-request --no-progress
+                aws s3 sync "${S3_URI}" "/opt/data/db" --no-sign-request --no-progress
               fi
           env:
             - name: HOME
