@@ -1156,12 +1156,66 @@ resource "helm_release" "validator" {
 
 ---
 
-### 2.6 Testing & Validation
+### 2.6 Secret Management Integration (Added: 2026-02-18)
+
+**Status:** 🔄 In Progress
+
+#### Issues Identified
+
+1. **Helm Chart Missing Secret Mount**
+   - `charts/movement-node/templates/statefulset.yaml` does not mount the validator identity secret
+   - Secret is referenced in values but never mounted to `/opt/data/genesis/validator-identity.yaml`
+   
+2. **Terraform Missing AWS Secrets Manager Integration**
+   - `examples/validator-vfn/main.tf` creates namespace but does not create K8s secret
+   - Requires manual `kubectl create secret` step
+   - No integration with AWS Secrets Manager
+
+#### Implementation Plan
+
+**Phase 1: Fix Helm Chart (charts/movement-node)**
+- [ ] Add conditional volume for validator identity secret
+- [ ] Mount secret to `/opt/data/genesis/validator-identity.yaml`
+- [ ] Only mount when `node.type == "validator"`
+- [ ] Test with existing K8s secret
+
+**Phase 2: Add Terraform AWS Secrets Manager Integration**
+- [ ] Add data source to read from AWS Secrets Manager
+- [ ] Create K8s secret resource from AWS secret
+- [ ] Update variables to accept AWS secret name
+- [ ] Document secret naming convention: `movement/${validator_name}/validator-identity`
+
+**Phase 3: Update Documentation**
+- [ ] Update README with new workflow
+- [ ] Document AWS Secrets Manager setup
+- [ ] Provide migration guide from manual kubectl approach
+
+#### New Workflow
+
+```bash
+# 1. Generate validator keys locally
+aptos genesis generate-keys --output-dir ./keys
+
+# 2. Store in AWS Secrets Manager
+aws secretsmanager create-secret \
+  --name movement/validator-01/validator-identity \
+  --secret-string file://keys/validator-identity.yaml
+
+# 3. Deploy with Terraform (automatically creates K8s secret)
+terraform apply
+
+# 4. Deploy script uses the K8s secret (created by Terraform)
+python deploy.py
+```
+
+### 2.7 Testing & Validation
 
 #### Test Checklist
 
 - [ ] Validator pod starts successfully
 - [ ] Secrets are loaded from AWS Secrets Manager
+- [ ] K8s secret automatically created by Terraform
+- [ ] Secret properly mounted to validator pod
 - [ ] Genesis sync completes
 - [ ] Validator produces blocks
 - [ ] Metrics endpoint returns data
@@ -1205,23 +1259,29 @@ fi
 
 ---
 
-### 2.7 Deliverables
+### 2.8 Deliverables
 
 | Item | Status | Owner | Due Date |
 |------|--------|-------|----------|
-| AWS Secrets Manager integration | ⬜ Not Started | | Week 4 |
-| External Secrets Operator setup | ⬜ Not Started | | Week 4 |
+| AWS Secrets Manager integration | 🔄 In Progress | | 2026-02-18 |
+| **NEW: Helm chart secret mounting** | 🔄 In Progress | | 2026-02-18 |
+| **NEW: Terraform K8s secret creation** | 🔄 In Progress | | 2026-02-18 |
+| External Secrets Operator setup | ⬜ Deferred | | Week 4 |
 | `movement-validator` Helm chart | ⬜ Not Started | | Week 5 |
 | Validator deployment example | ⬜ Not Started | | Week 5 |
 | Integration tests | ⬜ Not Started | | Week 6 |
 | Documentation | ⬜ Not Started | | Week 6 |
 
+**Note:** Using direct AWS Secrets Manager + K8s secrets instead of External Secrets Operator for simplicity.
+
 ---
 
-### 2.8 Exit Criteria
+### 2.9 Exit Criteria
 
 ✅ Validator produces blocks in devnet
 ✅ Secrets management via AWS Secrets Manager works
+✅ **NEW: Terraform automatically creates K8s secrets from AWS SM**
+✅ **NEW: Helm chart properly mounts secrets to validator pod**
 ✅ Validator survives pod restart
 ✅ Metrics are accessible
 ✅ Helm chart is documented

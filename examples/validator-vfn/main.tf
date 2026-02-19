@@ -1,22 +1,3 @@
-terraform {
-  required_version = ">= 1.9.0"
-
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-    kubernetes = {
-      source  = "hashicorp/kubernetes"
-      version = "~> 2.35"
-    }
-    helm = {
-      source  = "hashicorp/helm"
-      version = "~> 2.16"
-    }
-  }
-}
-
 provider "aws" {
   region  = var.region
   profile = var.aws_profile != "" ? var.aws_profile : null
@@ -61,7 +42,7 @@ module "eks" {
 # Configure Kubernetes provider
 provider "kubernetes" {
   host                   = module.eks.cluster_endpoint
-  cluster_ca_certificate = base64decode(module.eks.cluster_ca_cert)
+  cluster_ca_certificate = base64decode(module.eks.cluster_ca_certificate)
 
   exec {
     api_version = "client.authentication.k8s.io/v1beta1"
@@ -85,7 +66,7 @@ data "aws_eks_cluster_auth" "cluster" {
 provider "helm" {
   kubernetes {
     host                   = module.eks.cluster_endpoint
-    cluster_ca_certificate = base64decode(module.eks.cluster_ca_cert)
+    cluster_ca_certificate = base64decode(module.eks.cluster_ca_certificate)
     token                  = data.aws_eks_cluster_auth.cluster.token
   }
 }

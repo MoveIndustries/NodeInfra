@@ -49,11 +49,11 @@ spec:
           args:
             - |
               set -euo pipefail
-              mkdir -p /opt/data/db
+              mkdir -p /opt/data/aptos/db
               S3_URI="s3://{{ .Values.bootstrap.s3.bucket }}/{{ .Values.bootstrap.s3.prefix }}"
-              if ! aws s3 sync "${S3_URI}" "/opt/data/db" --no-progress; then
+              if ! aws s3 sync "${S3_URI}" "/opt/data/aptos/db" --no-progress; then
                 echo "Signed S3 sync failed; retrying with --no-sign-request" >&2
-                aws s3 sync "${S3_URI}" "/opt/data/db" --no-sign-request --no-progress
+                aws s3 sync "${S3_URI}" "/opt/data/aptos/db" --no-sign-request --no-progress
               fi
           env:
             - name: HOME
@@ -95,10 +95,24 @@ spec:
             - name: config
               mountPath: /etc/aptos
               readOnly: true
+            {{- if eq .Values.node.type "validator" }}
+            - name: validator-identity
+              mountPath: /opt/data/genesis/validator-identity.yaml
+              subPath: validator-identity.yaml
+              readOnly: true
+            {{- end }}
       volumes:
         - name: config
           configMap:
             name: {{ include "movement-node.fullname" . }}-config
+        {{- if eq .Values.node.type "validator" }}
+        - name: validator-identity
+          secret:
+            secretName: {{ .Values.validator.identity.existingSecret }}
+            items:
+              - key: validator-identity.yaml
+                path: validator-identity.yaml
+        {{- end }}
   volumeClaimTemplates:
     - metadata:
         name: data

@@ -60,10 +60,10 @@ This example demonstrates how to deploy a complete Movement Network validator se
 
 ## Step 1: Generate Validator Keys
 
-Before deploying, you need to generate validator identity keys. You can use the Aptos CLI or Movement CLI to generate these keys.
+Before deploying, you need to generate validator identity keys using the Aptos CLI or Movement CLI.
 
 ```bash
-# Using Aptos CLI (example)
+# Using Aptos CLI
 aptos genesis generate-keys --output-dir ./keys
 
 # This will generate files like:
@@ -80,17 +80,35 @@ consensus_private_key: "0x..."
 network_private_key: "0x..."
 ```
 
-## Step 2: Create Kubernetes Secret
+## Step 2: Store Keys in AWS Secrets Manager (Recommended)
 
-Create a Kubernetes secret with the validator identity:
+**NEW**: Terraform can now automatically create Kubernetes secrets from AWS Secrets Manager.
 
 ```bash
-# Create the secret before deploying
+# Store validator identity in AWS Secrets Manager
+aws secretsmanager create-secret \
+  --name movement/validator-01/validator-identity \
+  --secret-string file://keys/validator-identity.yaml \
+  --description "Validator identity for validator-01"
+
+# Verify the secret was created
+aws secretsmanager describe-secret \
+  --secret-id movement/validator-01/validator-identity
+```
+
+### Alternative: Manual Kubernetes Secret Creation
+
+If you prefer not to use AWS Secrets Manager, you can create the Kubernetes secret manually:
+
+```bash
+# Create namespace and secret manually
 kubectl create namespace movement-l1
 kubectl create secret generic validator-identity \
   --from-file=validator-identity.yaml=./keys/validator-identity.yaml \
   -n movement-l1
 ```
+
+**Note**: If using the manual approach, leave `VALIDATOR_KEYS_SECRET_NAME` empty in your `.env` file.
 
 ## Step 3: Configure Deployment
 

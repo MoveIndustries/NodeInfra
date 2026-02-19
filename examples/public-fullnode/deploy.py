@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+b,#!/usr/bin/env python3
 """
 Deployment configuration for Movement public fullnode.
 
@@ -80,7 +80,7 @@ def build_helm_config(env_vars: dict, outputs: dict) -> dict:
         "node.type": "fullnode",
         "node.name": service_name,
         "network.name": env_vars.get("NETWORK_NAME", "testnet"),
-        "network.chainId": env_vars.get("CHAIN_ID", "126"),
+        "network.chainId": env_vars.get("CHAIN_ID", "250"),
         "storage.create": "true",
         "storage.storageClassName": "gp3",
         "storage.parameters.type": "gp3",

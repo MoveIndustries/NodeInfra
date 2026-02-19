@@ -18,8 +18,8 @@ network:
   name: "testnet"
   chainId: "126"
 
-# Data directory (matches S3 bootstrap location)
-dataDir: "/opt/data"
+# Data directory (matches S3 bootstrap location and validator config)
+dataDir: "/opt/data/aptos"
 
 # Genesis configuration (for validator and VFN)
 genesis:
