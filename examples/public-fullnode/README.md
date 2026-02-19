@@ -93,7 +93,7 @@ helm upgrade --install "$RELEASE_NAME" ./charts/movement-node \
   --set node.type=fullnode \
   --set node.name="$SERVICE_NAME" \
   --set network.name=testnet \
-  --set network.chainId=126 \
+  --set network.chainId=250 \
   --set-file config.inline=./configs/testnet.pfn-restore.yaml
 ```
 
@@ -115,7 +115,7 @@ helm upgrade --install "$RELEASE_NAME" ./charts/movement-node \
   --set node.type=fullnode \
   --set node.name="$SERVICE_NAME" \
   --set network.name=testnet \
-  --set network.chainId=126 \
+  --set network.chainId=250 \
   --set-file config.inline=./configs/testnet.pfn-restore.yaml \
   --set serviceAccount.create=true \
   --set serviceAccount.name="$SERVICE_ACCOUNT_NAME" \

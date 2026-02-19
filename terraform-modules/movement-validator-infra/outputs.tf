@@ -50,8 +50,20 @@ output "oidc_provider_url" {
 }
 
 output "node_role_arn" {
-  description = "IAM role ARN for nodes"
+  description = "IAM role ARN for EKS nodes"
   value       = aws_iam_role.node.arn
+}
+
+# Validator Identity Secret Outputs
+output "validator_identity_secret_data" {
+  description = "Validator identity secret data from AWS Secrets Manager (sensitive)"
+  value       = var.validator_keys_secret_name != "" ? data.aws_secretsmanager_secret_version.validator_identity[0].secret_string : ""
+  sensitive   = true
+}
+
+output "validator_identity_configured" {
+  description = "Whether validator identity secret is configured"
+  value       = var.validator_keys_secret_name != ""
 }
 
 output "node_role_name" {

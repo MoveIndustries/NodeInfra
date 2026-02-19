@@ -97,7 +97,14 @@ variable "enable_irsa" {
 }
 
 variable "tags" {
-  description = "Common tags for all resources"
+  description = "Common tags to apply to all resources"
   type        = map(string)
   default     = {}
+}
+
+# Validator Identity Secret Management
+variable "validator_keys_secret_name" {
+  description = "AWS Secrets Manager secret name containing validator identity (e.g., movement/validator-01/validator-identity). Leave empty to skip automatic secret creation."
+  type        = string
+  default     = ""
 }

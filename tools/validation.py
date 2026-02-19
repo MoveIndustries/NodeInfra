@@ -214,3 +214,61 @@ def validate_deployment(
         )
     
     info("✅ Deployment validation passed")
+
+
+def wait_for_pods_ready(
+    namespace: str,
+    pod_names: list[str],
+    timeout: int = 600,
+    check_api_health: bool = True,
+) -> None:
+    """Wait for multiple pods to be ready and optionally check API health.
+    
+    Args:
+        namespace: Kubernetes namespace
+        pod_names: List of pod names to wait for (without -0 suffix)
+        timeout: Maximum time to wait per pod in seconds
+        check_api_health: Whether to check /v1 API endpoint health
+    """
+    from kubernetes import client, config
+    import subprocess
+    import time as time_module
+    
+    config.load_kube_config()
+    v1 = client.CoreV1Api()
+    
+    for pod_name in pod_names:
+        full_pod_name = f"{pod_name}-0"
+        info(f"\nWaiting for {full_pod_name} to be ready...")
+        
+        for i in range(timeout // 10):
+            try:
+                pod = v1.read_namespaced_pod(full_pod_name, namespace)
+                if pod.status.phase == "Running":
+                    all_ready = all(cs.ready for cs in (pod.status.container_statuses or []))
+                    if all_ready:
+                        info(f"✅ Pod {full_pod_name} is ready")
+                        break
+                info(f"  Pod {full_pod_name}: phase={pod.status.phase} (waiting...)")
+            except Exception:
+                info(f"  Pod {full_pod_name}: not found yet (waiting...)")
+            time_module.sleep(10)
+    
+    if check_api_health:
+        info("\nChecking API health for all nodes...")
+        for pod_name in pod_names:
+            full_pod_name = f"{pod_name}-0"
+            try:
+                result = subprocess.run(
+                    ["kubectl", "exec", full_pod_name, "-n", namespace, "--",
+                     "curl", "-s", "localhost:8080/v1"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+                if result.returncode == 0 and "ledger_version" in result.stdout:
+                    info(f"✅ {pod_name} API is healthy")
+                else:
+                    warn(f"⚠️  {pod_name} API not responding yet")
+            except Exception as e:
+                warn(f"⚠️  {pod_name} API check failed: {e}")
