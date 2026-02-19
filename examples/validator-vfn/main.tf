@@ -25,14 +25,14 @@ module "network" {
 module "eks" {
   source = "../../terraform-modules/movement-validator-infra"
 
-  cluster_name       = "${var.validator_name}-cluster"
-  kubernetes_version = var.kubernetes_version
-  vpc_id             = module.network.vpc_id
-  private_subnet_ids = module.network.private_subnet_ids
+  cluster_name        = "${var.validator_name}-cluster"
+  kubernetes_version  = var.kubernetes_version
+  vpc_id              = module.network.vpc_id
+  private_subnet_ids  = module.network.private_subnet_ids
   node_instance_types = var.node_instance_types
-  node_desired_size  = var.node_desired_size
-  node_min_size      = var.node_min_size
-  node_max_size      = var.node_max_size
+  node_desired_size   = var.node_desired_size
+  node_min_size       = var.node_min_size
+  node_max_size       = var.node_max_size
 
   tags = var.tags
 
@@ -55,19 +55,6 @@ provider "kubernetes" {
       "--region",
       var.region
     ]
-  }
-}
-
-# Configure Helm provider
-data "aws_eks_cluster_auth" "cluster" {
-  name = module.eks.cluster_id
-}
-
-provider "helm" {
-  kubernetes {
-    host                   = module.eks.cluster_endpoint
-    cluster_ca_certificate = base64decode(module.eks.cluster_ca_certificate)
-    token                  = data.aws_eks_cluster_auth.cluster.token
   }
 }
 
