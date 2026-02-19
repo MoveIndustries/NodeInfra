@@ -124,7 +124,7 @@ EKS infrastructure with Kubernetes cluster, managed nodes, and IAM.
 **Goals:**
 - AWS Secrets Manager integration
 - External Secrets Operator
-- movement-validator Helm chart
+- movement-node Helm chart (unified for all node types)
 - Deploy Aptos validator
 - Validate block production
 
@@ -133,11 +133,11 @@ EKS infrastructure with Kubernetes cluster, managed nodes, and IAM.
 ### ⬜ Milestone 3: VFN + Full Node
 
 **Goals:**
-- movement-vfn Helm chart
-- movement-fullnode Helm chart
-- Complete network topology
+- movement-node chart extensions for VFN and fullnode
+- Complete 3-tier network topology (validator → VFN → fullnode)
 - Load balancer + DNS
 - Public API access
+- S3 bootstrap for fast fullnode sync
 
 **Duration:** 2-3 weeks
 

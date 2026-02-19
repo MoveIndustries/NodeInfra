@@ -20,12 +20,67 @@ from typing import Optional
 # Add parent directory to path to import tools
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from tools import ClusterManager, run_deployment_cli, info, success
+from tools import ClusterManager, run_deployment_cli, info, success, warn, error
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT_DIR = SCRIPT_DIR.parents[1]
 CHART_DIR = ROOT_DIR / "charts" / "movement-node"
+
+
+def create_validator_secret_from_aws_sm(
+    namespace: str,
+    secret_name: str,
+    aws_secret_name: str,
+    region: str,
+) -> None:
+    """Create Kubernetes secret from AWS Secrets Manager.
+    
+    Args:
+        namespace: Kubernetes namespace
+        secret_name: Name for the Kubernetes secret
+        aws_secret_name: AWS Secrets Manager secret name
+        region: AWS region
+    """
+    try:
+        import boto3
+        from kubernetes import client, config
+        
+        info(f"Reading validator identity from AWS Secrets Manager: {aws_secret_name}")
+        
+        # Read from AWS Secrets Manager
+        sm_client = boto3.client('secretsmanager', region_name=region)
+        response = sm_client.get_secret_value(SecretId=aws_secret_name)
+        secret_data = response['SecretString']
+        
+        # Connect to Kubernetes
+        config.load_kube_config()
+        v1 = client.CoreV1Api()
+        
+        # Check if secret already exists
+        try:
+            v1.read_namespaced_secret(secret_name, namespace)
+            info(f"  Secret '{secret_name}' already exists in namespace '{namespace}'")
+            return
+        except client.exceptions.ApiException as e:
+            if e.status != 404:
+                raise
+        
+        # Create Kubernetes secret using string_data (no base64 encoding needed)
+        k8s_secret = client.V1Secret(
+            metadata=client.V1ObjectMeta(name=secret_name),
+            string_data={
+                "validator-identity.yaml": secret_data
+            },
+            type="Opaque"
+        )
+        
+        v1.create_namespaced_secret(namespace, k8s_secret)
+        success(f"✅ Created Kubernetes secret '{secret_name}' from AWS Secrets Manager")
+        
+    except Exception as e:
+        error(f"Failed to create secret from AWS Secrets Manager: {e}")
+        raise
 
 
 def build_terraform_vars(env_vars: dict) -> dict:
@@ -70,7 +125,7 @@ def build_terraform_vars(env_vars: dict) -> dict:
 
 
 def deploy_node(
-    cluster: ClusterManager,
+    helm,
     node_type: str,
     node_name: str,
     namespace: str,
@@ -82,17 +137,22 @@ def deploy_node(
     """Deploy a single node with appropriate configuration."""
     info(f"Deploying {node_type}: {node_name}")
     
-    # Base configuration
+    # Base configuration with S3 bootstrap for all nodes
     set_values = {
         "node.type": node_type,
         "node.name": node_name,
         "network.name": "testnet",
-        "network.chainId": "126",
+        "network.chainId": "250",
         "storage.create": "true" if node_type == "validator" else "false",
         "storage.storageClassName": "gp3",
         "storage.parameters.type": "gp3",
         "storage.parameters.iops": "6000",
         "storage.parameters.throughput": "500",
+        # Enable S3 bootstrap for all nodes
+        "bootstrap.enabled": "true",
+        "bootstrap.s3.bucket": "movement-2026-02-11-backup",
+        "bootstrap.s3.prefix": "testnet/db",
+        "bootstrap.s3.region": "us-west-2",
     }
     
     # Override service type if specified
@@ -123,7 +183,7 @@ def deploy_node(
     # Deploy with Helm
     config_file = ROOT_DIR / "charts" / "movement-node" / "files" / f"{node_type}.yaml"
     
-    cluster.helm.upgrade_install(
+    helm.upgrade_install(
         release_name=node_name,
         namespace=namespace,
         create_namespace=True,
@@ -171,22 +231,41 @@ def deploy(env_vars: dict, force_create: bool, validate: bool) -> None:
     else:
         cluster.terraform.init(upgrade=True)
         cluster.terraform.validate()
-        cluster.terraform.apply(var_args=terraform_vars, auto_approve=True)
+        var_args = cluster.terraform.build_var_args(terraform_vars)
+        cluster.terraform.apply(var_args=var_args, auto_approve=True)
         outputs = cluster.terraform.get_outputs()
     
     # Update kubeconfig
     cluster_name = outputs.get("cluster_name", f"{env_vars.get('VALIDATOR_NAME', 'validator')}-cluster")
     region = outputs.get("region", env_vars.get("AWS_REGION", "us-east-1"))
     
-    cluster.eks.cluster_name = cluster_name
-    cluster.eks.region = region
-    cluster.eks.wait_until_active()
-    cluster.eks.update_kubeconfig()
+    from tools.eks import EKSManager
+    eks = EKSManager(cluster_name, region)
+    eks.wait_until_active()
+    eks.update_kubeconfig()
+    
+    # Step 1.5: Create validator secret from AWS Secrets Manager (if configured)
+    aws_secret_name = env_vars.get("VALIDATOR_KEYS_SECRET_NAME", "")
+    if aws_secret_name:
+        info("\n" + "=" * 80)
+        info("Creating Kubernetes Secret from AWS Secrets Manager")
+        info("=" * 80)
+        create_validator_secret_from_aws_sm(
+            namespace=namespace,
+            secret_name=validator_keys_secret,
+            aws_secret_name=aws_secret_name,
+            region=region,
+        )
+    else:
+        info(f"Skipping AWS Secrets Manager (using existing K8s secret: {validator_keys_secret})")
     
     # Step 2: Deploy nodes in order
+    from tools.helm import HelmManager
+    helm = HelmManager(CHART_DIR)
+    
     # Deploy validator first (always ClusterIP)
     deploy_node(
-        cluster=cluster,
+        helm=helm,
         node_type="validator",
         node_name=validator_name,
         namespace=namespace,
@@ -200,7 +279,7 @@ def deploy(env_vars: dict, force_create: bool, validate: bool) -> None:
         vfn_service_type = "ClusterIP" if deploy_fullnode else "LoadBalancer"
         
         deploy_node(
-            cluster=cluster,
+            helm=helm,
             node_type="vfn",
             node_name=vfn_name,
             namespace=namespace,
@@ -211,7 +290,7 @@ def deploy(env_vars: dict, force_create: bool, validate: bool) -> None:
     # Deploy fullnode if requested
     if deploy_fullnode:
         deploy_node(
-            cluster=cluster,
+            helm=helm,
             node_type="fullnode",
             node_name=fullnode_name,
             namespace=namespace,
@@ -221,24 +300,38 @@ def deploy(env_vars: dict, force_create: bool, validate: bool) -> None:
     
     # Step 3: Validation (if requested)
     if validate:
-        # Determine which node to validate (the public-facing one)
+        from tools.validation import wait_for_pods_ready, validate_deployment
+        
+        info("\n" + "=" * 80)
+        info("Validating All Nodes")
+        info("=" * 80)
+        
+        # Build list of all deployed pods
+        pods_to_check = [validator_name]
+        if deploy_vfn:
+            pods_to_check.append(vfn_name)
         if deploy_fullnode:
-            validate_service = fullnode_name
-        elif deploy_vfn:
-            validate_service = vfn_name
-        else:
-            # Validator-only, no public API to validate
-            success("Deployment complete (validator-only, no public API)")
-            return
+            pods_to_check.append(fullnode_name)
         
-        from tools.validation import validate_deployment
-        
-        validate_deployment(
+        # Wait for all pods and check their API health
+        wait_for_pods_ready(
             namespace=namespace,
-            service_name=validate_service,
-            pod_timeout=3600,
-            lb_retries=60,
+            pod_names=pods_to_check,
+            timeout=3600,
+            check_api_health=True,
         )
+        
+        # Final validation: check public endpoint if available
+        if deploy_fullnode or deploy_vfn:
+            validate_service = fullnode_name if deploy_fullnode else vfn_name
+            
+            info(f"\nValidating public endpoint: {validate_service}")
+            validate_deployment(
+                namespace=namespace,
+                service_name=validate_service,
+                pod_timeout=3600,
+                lb_retries=60,
+            )
     
     success("Deployment complete!")
     
