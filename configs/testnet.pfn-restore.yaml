@@ -25,7 +25,7 @@ full_node_networks:
 
 api:
   enabled: true
-  address: 0.0.0.0:8080 
+  address: 0.0.0.0:8080
 
 state_sync:
   state_sync_driver:

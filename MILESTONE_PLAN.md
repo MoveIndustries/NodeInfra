@@ -1,9 +1,9 @@
 # Movement Network Infrastructure - Milestone Implementation Plan
 
-**Version:** 1.1  
-**Date:** 2026-01-30 (Last Updated: 2026-02-17)  
-**Based on:** validator-infrastructure-redesign-v2.md  
-**Project:** Native Terraform HCL Validator Infrastructure  
+**Version:** 1.1
+**Date:** 2026-01-30 (Last Updated: 2026-02-17)
+**Based on:** validator-infrastructure-redesign-v2.md
+**Project:** Native Terraform HCL Validator Infrastructure
 
 ---
 
@@ -65,7 +65,7 @@ Reusable Python package providing infrastructure deployment primitives:
 - Result: ✅ PASSED
 
 **Test Run 2 - Infrastructure Exists:**
-- Duration: ~2 minutes  
+- Duration: ~2 minutes
 - Infrastructure detection: Skipped Terraform
 - Helm upgrade: REVISION 1 → 2
 - API healthy: `ledger_version=78,261,045`
@@ -74,7 +74,7 @@ Reusable Python package providing infrastructure deployment primitives:
 **Test Run 3 - Fresh Pod:**
 - Duration: ~30 minutes (s3-bootstrap)
 - Infrastructure: Skipped
-- Helm upgrade: REVISION 2 → 3  
+- Helm upgrade: REVISION 2 → 3
 - Pod reinitializing with S3 download
 - Result: ✅ Working as expected
 
@@ -693,18 +693,18 @@ Use spot instances (`enable_spot_instances = true`) to reduce costs by ~70%.
 
 **Definition of Done:**
 
-✅ All Terraform modules have passing unit tests  
-✅ Hello World example deploys successfully  
-✅ DNS resolution works and HTTP endpoint responds  
-✅ Infrastructure can be destroyed completely  
-✅ Documentation allows external user to deploy without assistance  
-✅ **NEW: Deployment automation with .env configuration**  
-✅ **NEW: Reusable Python tools package**  
-✅ **NEW: Simplified integration test (81% code reduction)**  
-⬜ Code review completed  
-⬜ Demo presented to stakeholders  
+✅ All Terraform modules have passing unit tests
+✅ Hello World example deploys successfully
+✅ DNS resolution works and HTTP endpoint responds
+✅ Infrastructure can be destroyed completely
+✅ Documentation allows external user to deploy without assistance
+✅ **NEW: Deployment automation with .env configuration**
+✅ **NEW: Reusable Python tools package**
+✅ **NEW: Simplified integration test (81% code reduction)**
+⬜ Code review completed
+⬜ Demo presented to stakeholders
 
-**Status: M1 COMPLETE** ✅  
+**Status: M1 COMPLETE** ✅
 **Ready for M2:** Core infrastructure modules are stable and tested
 
 ---
@@ -1165,7 +1165,7 @@ resource "helm_release" "validator" {
 1. **Helm Chart Missing Secret Mount**
    - `charts/movement-node/templates/statefulset.yaml` does not mount the validator identity secret
    - Secret is referenced in values but never mounted to `/opt/data/genesis/validator-identity.yaml`
-   
+
 2. **Terraform Missing AWS Secrets Manager Integration**
    - `examples/validator-vfn/main.tf` creates namespace but does not create K8s secret
    - Requires manual `kubectl create secret` step
@@ -2697,13 +2697,13 @@ success("Integration test passed!")
 
 ### Benefits
 
-✅ **Code Reuse**: 541 lines of tools code eliminates duplication across all scripts  
-✅ **Developer Experience**: One-command deployment (`python3 deploy.py`)  
-✅ **Configuration**: Simple `.env` file instead of complex CLI args  
-✅ **Maintainability**: Changes to deployment logic in one place  
-✅ **Type Safety**: Full type hints for IDE support  
-✅ **Testing**: Each manager class can be unit tested  
-✅ **Documentation**: Comprehensive README with examples  
+✅ **Code Reuse**: 541 lines of tools code eliminates duplication across all scripts
+✅ **Developer Experience**: One-command deployment (`python3 deploy.py`)
+✅ **Configuration**: Simple `.env` file instead of complex CLI args
+✅ **Maintainability**: Changes to deployment logic in one place
+✅ **Type Safety**: Full type hints for IDE support
+✅ **Testing**: Each manager class can be unit tested
+✅ **Documentation**: Comprehensive README with examples
 
 ### Impact on Milestones
 
@@ -2731,6 +2731,116 @@ examples/public-fullnode/
 ```
 
 **Total:** 1,082 lines of reusable infrastructure code!
+
+---
+
+## Development Setup & Code Quality
+
+### Prerequisites
+
+- Python 3.10 or higher
+- [Poetry](https://python-poetry.org/docs/) - Python dependency management
+- Terraform
+- tflint
+- AWS CLI configured
+
+### Initial Setup
+
+Install all required tools and dependencies:
+
+```bash
+make install-tools
+```
+
+This will:
+1. Install tflint for Terraform linting
+2. Install Python dev dependencies (black, isort, ruff, mypy)
+3. Set up pre-commit hooks
+
+### Code Quality Tools
+
+**Python Tools:**
+- **Black**: Code formatter (100 character line length)
+- **isort**: Import statement organizer (Black-compatible)
+- **Ruff**: Fast Python linter
+- **mypy**: Static type checker
+
+**Terraform Tools:**
+- **terraform fmt**: Official Terraform formatter
+- **tflint**: Terraform linter
+- **terraform validate**: Terraform syntax validator
+
+### Make Commands
+
+```bash
+# Format all code (Python + Terraform)
+make fmt
+
+# Format only Python
+make py-fmt
+
+# Lint all code
+make lint
+
+# Lint only Python
+make py-lint
+
+# Type check Python
+make py-type-check
+
+# Run tests
+make test
+
+# Clean up
+make clean
+
+# View all commands
+make help
+```
+
+### Pre-commit Hooks
+
+Pre-commit hooks run automatically on `git commit`:
+
+**Python:**
+- Black formatting
+- isort import sorting
+- Ruff linting
+- mypy type checking
+
+**Terraform:**
+- terraform fmt
+- terraform validate
+- tflint
+
+**General:**
+- Trailing whitespace
+- End-of-file fixes
+- YAML syntax
+- Large file detection
+
+Run manually on all files:
+```bash
+poetry run pre-commit run --all-files
+```
+
+### Development Workflow
+
+1. Make your changes
+2. Format: `make fmt`
+3. Lint: `make lint`
+4. Test: `make test`
+5. Commit (pre-commit hooks run automatically)
+
+### Configuration
+
+**Python (pyproject.toml):**
+- Line length: 100 characters
+- Target version: Python 3.10+
+- Import style: Black-compatible
+
+**Terraform (.tflint.hcl):**
+- Configured per repository root
 
 ---
 

@@ -41,7 +41,7 @@ validator:
   identity:
     createSecret: false
     existingSecret: "validator-identity"
-  
+
   # VFN connection configuration
   vfn:
     enabled: true
@@ -56,7 +56,7 @@ vfn:
     namespace: "movement-l1"
     peerId: "00000000000000000000000000000000d58bc7bb154b38039bc9096ce04e1237"
     port: 6181
-  
+
   # Public fullnode network identity
   fullnode:
     enabled: true

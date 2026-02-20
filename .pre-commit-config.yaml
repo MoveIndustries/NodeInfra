@@ -1,8 +1,39 @@
-# Pre-commit hooks for Terraform linting
+# Pre-commit hooks for Terraform and Python linting
 # Install with: pip install pre-commit && pre-commit install
 # Run manually: pre-commit run --all-files
 
 repos:
+  # Python formatting and linting
+  - repo: https://github.com/psf/black
+    rev: 24.2.0
+    hooks:
+      - id: black
+        name: Black (Python formatter)
+        language_version: python3
+
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        name: isort (Python import sorting)
+        args: ["--profile", "black"]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.3.0
+    hooks:
+      - id: ruff
+        name: Ruff (Python linter)
+        args: [--fix, --exit-non-zero-on-fix]
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.8.0
+    hooks:
+      - id: mypy
+        name: mypy (Python type checker)
+        args: [--ignore-missing-imports, --no-strict-optional]
+        exclude: ^examples/.*/deploy\.py$
+
+  # Terraform formatting and linting
   - repo: https://github.com/antonbabenko/pre-commit-terraform
     rev: v1.88.4
     hooks:
@@ -15,11 +46,12 @@ repos:
         description: Validate Terraform files
         exclude: ^examples/
 
-      - id: terraform_tflint
-        name: TFLint
-        description: Lint Terraform files with tflint
-        args:
-          - --args=--config=__GIT_WORKING_DIR__/.tflint.hcl
+      # Disabled - requires tflint to be installed
+      # - id: terraform_tflint
+      #   name: TFLint
+      #   description: Lint Terraform files with tflint
+      #   args:
+      #     - --args=--config=__GIT_WORKING_DIR__/.tflint.hcl
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.5.0
@@ -35,6 +67,7 @@ repos:
       - id: check-yaml
         name: Check YAML syntax
         args: ['--unsafe']
+        exclude: ^charts/.*/(templates|files)/.*\.yaml$
 
       - id: check-added-large-files
         name: Check for large files

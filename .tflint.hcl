@@ -13,12 +13,12 @@ plugin "aws" {
 }
 
 config {
-  # Enable module inspection
-  module = true
-  
+  # Enable module inspection (all modules including remote)
+  call_module_type = "all"
+
   # Force plugin downloads
   force = false
-  
+
   # Disable built-in rules
   disabled_by_default = false
 }

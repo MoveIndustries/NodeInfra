@@ -7,18 +7,17 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Optional
 
-from .utils import info, warn, fail
+from .utils import fail, info, warn
 
 
-def load_k8s_client(kubeconfig_path: Optional[Path] = None):
+def load_k8s_client(kubeconfig_path: Path | None = None):
     """
     Load Kubernetes client.
-    
+
     Args:
         kubeconfig_path: Optional path to kubeconfig file
-        
+
     Returns:
         CoreV1Api client instance
     """
@@ -26,12 +25,12 @@ def load_k8s_client(kubeconfig_path: Optional[Path] = None):
         from kubernetes import client, config
     except ImportError:
         fail("Missing dependency 'kubernetes'. Install with: pip install kubernetes")
-    
+
     if kubeconfig_path:
         config.load_kube_config(config_file=str(kubeconfig_path))
     else:
         config.load_kube_config()
-    
+
     return client.CoreV1Api()
 
 
@@ -40,64 +39,70 @@ def wait_for_pod_ready(
     app_label: str,
     timeout: int = 3600,
     interval: int = 10,
-    kubeconfig_path: Optional[Path] = None,
+    kubeconfig_path: Path | None = None,
 ) -> None:
     """
     Wait for a pod with specified app label to become ready.
-    
+
     Args:
         namespace: Kubernetes namespace
         app_label: Value of the app label
         timeout: Maximum time to wait in seconds
         interval: Check interval in seconds
         kubeconfig_path: Optional path to kubeconfig
-        
+
     Raises:
         SystemExit: If timeout or pod fails to become ready
     """
     core_api = load_k8s_client(kubeconfig_path)
     deadline = time.time() + timeout
     selector = f"app={app_label}"
-    
+
     info(f"Waiting for pod to become ready (namespace={namespace}, app={app_label})")
-    
+
     while time.time() < deadline:
         pods = core_api.list_namespaced_pod(namespace=namespace, label_selector=selector).items
-        
+
         if not pods:
             warn(f"No pods found with label app={app_label}")
             time.sleep(interval)
             continue
-        
+
         for pod in pods:
             pod_name = pod.metadata.name
             phase = pod.status.phase
-            
+
             # Check if pod is ready
-            for cond in (pod.status.conditions or []):
+            for cond in pod.status.conditions or []:
                 if cond.type == "Ready" and cond.status == "True":
                     info(f"✅ Pod {pod_name} is ready")
                     return
-            
+
             # Show pod status with init container details
             if phase == "Pending" and pod.status.init_container_statuses:
                 for init_status in pod.status.init_container_statuses:
                     if init_status.state.running:
                         print(f"  Pod {pod_name}: Init container '{init_status.name}' is running")
                     elif init_status.state.waiting:
-                        reason = init_status.state.waiting.reason if init_status.state.waiting.reason else "Unknown"
-                        print(f"  Pod {pod_name}: Init container '{init_status.name}' waiting: {reason}")
+                        reason = (
+                            init_status.state.waiting.reason
+                            if init_status.state.waiting.reason
+                            else "Unknown"
+                        )
+                        print(
+                            f"  Pod {pod_name}: Init container '{init_status.name}' waiting: {reason}"
+                        )
                     elif init_status.state.terminated:
                         print(f"  Pod {pod_name}: Init container '{init_status.name}' completed")
             else:
                 print(f"  Pod {pod_name}: phase={phase}")
-            
+
             # Check for failed state
             if phase == "Failed":
                 fail(f"Pod {pod_name} entered Failed state")
-        
+
         time.sleep(interval)
-    
+
     fail(f"Timeout waiting for pod to become ready (namespace={namespace}, app={app_label})")
 
 
@@ -108,11 +113,11 @@ def wait_for_loadbalancer_and_api(
     api_port: int = 8080,
     retries: int = 60,
     interval: int = 10,
-    kubeconfig_path: Optional[Path] = None,
+    kubeconfig_path: Path | None = None,
 ) -> str:
     """
     Wait for LoadBalancer to get external IP and API to be healthy.
-    
+
     Args:
         namespace: Kubernetes namespace
         service_name: Service name
@@ -121,17 +126,17 @@ def wait_for_loadbalancer_and_api(
         retries: Number of retries
         interval: Interval between retries in seconds
         kubeconfig_path: Optional path to kubeconfig
-        
+
     Returns:
         LoadBalancer hostname or IP
-        
+
     Raises:
         SystemExit: If timeout or API fails health check
     """
     core_api = load_k8s_client(kubeconfig_path)
-    
+
     info(f"Waiting for LoadBalancer and API health (service={service_name})")
-    
+
     for attempt in range(1, retries + 1):
         try:
             svc = core_api.read_namespaced_service(name=service_name, namespace=namespace)
@@ -139,12 +144,16 @@ def wait_for_loadbalancer_and_api(
             warn(f"Failed to read service: {e}, retry {attempt}/{retries}")
             time.sleep(interval)
             continue
-        
-        ingress = (svc.status.load_balancer.ingress or []) if svc.status and svc.status.load_balancer else []
+
+        ingress = (
+            (svc.status.load_balancer.ingress or [])
+            if svc.status and svc.status.load_balancer
+            else []
+        )
         host = ""
         if ingress:
             host = (ingress[0].hostname or ingress[0].ip or "").strip()
-        
+
         if host:
             url = f"http://{host}:{api_port}{api_path}"
             try:
@@ -162,10 +171,11 @@ def wait_for_loadbalancer_and_api(
                 warn(f"LB/API not ready ({str(e)}), retry {attempt}/{retries}")
         else:
             print(f"  LoadBalancer pending, retry {attempt}/{retries}")
-        
+
         time.sleep(interval)
-    
+
     fail("Timeout waiting for LoadBalancer/API readiness")
+    return ""  # Unreachable, but satisfies type checker
 
 
 def validate_deployment(
@@ -175,11 +185,11 @@ def validate_deployment(
     lb_retries: int = 60,
     interval: int = 10,
     validate_api: bool = True,
-    kubeconfig_path: Optional[Path] = None,
+    kubeconfig_path: Path | None = None,
 ) -> None:
     """
     Validate that a deployment is healthy.
-    
+
     Args:
         namespace: Kubernetes namespace
         service_name: Service name (also used as app label)
@@ -188,21 +198,21 @@ def validate_deployment(
         interval: Check interval in seconds
         validate_api: Whether to validate LoadBalancer and API health (default: True)
         kubeconfig_path: Optional path to kubeconfig
-        
+
     Raises:
         SystemExit: If validation fails
     """
     info("Validating deployment")
-    
+
     # Wait for pod to be ready
     wait_for_pod_ready(
         namespace=namespace,
         app_label=service_name,
         timeout=pod_timeout,
         interval=interval,
-        kubeconfig_path=kubeconfig_path
+        kubeconfig_path=kubeconfig_path,
     )
-    
+
     # Optionally wait for LoadBalancer and API health
     if validate_api:
         wait_for_loadbalancer_and_api(
@@ -210,9 +220,9 @@ def validate_deployment(
             service_name=service_name,
             retries=lb_retries,
             interval=interval,
-            kubeconfig_path=kubeconfig_path
+            kubeconfig_path=kubeconfig_path,
         )
-    
+
     info("✅ Deployment validation passed")
 
 
@@ -223,25 +233,26 @@ def wait_for_pods_ready(
     check_api_health: bool = True,
 ) -> None:
     """Wait for multiple pods to be ready and optionally check API health.
-    
+
     Args:
         namespace: Kubernetes namespace
         pod_names: List of pod names to wait for (without -0 suffix)
         timeout: Maximum time to wait per pod in seconds
         check_api_health: Whether to check /v1 API endpoint health
     """
-    from kubernetes import client, config
     import subprocess
     import time as time_module
-    
+
+    from kubernetes import client, config
+
     config.load_kube_config()
     v1 = client.CoreV1Api()
-    
+
     for pod_name in pod_names:
         full_pod_name = f"{pod_name}-0"
         info(f"\nWaiting for {full_pod_name} to be ready...")
-        
-        for i in range(timeout // 10):
+
+        for _ in range(timeout // 10):
             try:
                 pod = v1.read_namespaced_pod(full_pod_name, namespace)
                 if pod.status.phase == "Running":
@@ -253,18 +264,27 @@ def wait_for_pods_ready(
             except Exception:
                 info(f"  Pod {full_pod_name}: not found yet (waiting...)")
             time_module.sleep(10)
-    
+
     if check_api_health:
         info("\nChecking API health for all nodes...")
         for pod_name in pod_names:
             full_pod_name = f"{pod_name}-0"
             try:
                 result = subprocess.run(
-                    ["kubectl", "exec", full_pod_name, "-n", namespace, "--",
-                     "curl", "-s", "localhost:8080/v1"],
+                    [
+                        "kubectl",
+                        "exec",
+                        full_pod_name,
+                        "-n",
+                        namespace,
+                        "--",
+                        "curl",
+                        "-s",
+                        "localhost:8080/v1",
+                    ],
                     capture_output=True,
                     text=True,
-                    timeout=10
+                    timeout=10,
                 )
                 if result.returncode == 0 and "ledger_version" in result.stdout:
                     info(f"✅ {pod_name} API is healthy")

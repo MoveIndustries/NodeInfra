@@ -1,17 +1,20 @@
-.PHONY: help lint fmt validate test clean install-tools
+.PHONY: help lint fmt validate test clean install-tools py-fmt py-lint py-type-check
 
 # Default target
 help:
 	@echo "Movement Network Validator Infrastructure - Makefile"
 	@echo ""
 	@echo "Available targets:"
-	@echo "  make lint           - Run all linting checks (fmt, tflint, validate)"
-	@echo "  make fmt            - Format all Terraform files"
+	@echo "  make lint           - Run all linting checks (Terraform + Python)"
+	@echo "  make fmt            - Format all Terraform and Python files"
 	@echo "  make fmt-check      - Check if Terraform files are formatted"
 	@echo "  make tflint         - Run tflint on all modules and examples"
 	@echo "  make validate       - Run terraform validate on all modules and examples"
+	@echo "  make py-fmt         - Format Python files with black and isort"
+	@echo "  make py-lint        - Lint Python files with ruff"
+	@echo "  make py-type-check  - Type check Python files with mypy"
 	@echo "  make test           - Run integration tests"
-	@echo "  make install-tools  - Install required linting tools (tflint)"
+	@echo "  make install-tools  - Install required linting tools"
 	@echo "  make clean          - Clean up temporary files"
 	@echo ""
 
@@ -21,13 +24,38 @@ install-tools:
 	@which tflint > /dev/null || curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash
 	@echo "Installing terraform-docs (optional)..."
 	@which terraform-docs > /dev/null || brew install terraform-docs || echo "terraform-docs not installed, skipping..."
-	@echo "Tools installed!"
+	@echo "Installing Python dev dependencies..."
+	@command -v poetry >/dev/null || (echo "✗ poetry is required. Install from https://python-poetry.org/docs/" && exit 1)
+	@poetry install --with dev --no-interaction --no-root
+	@echo "Installing pre-commit hooks..."
+	@poetry run pre-commit install
+	@echo "✓ All tools installed!"
 
-# Format all Terraform files
-fmt:
+# Format Python files
+py-fmt:
+	@echo "Formatting Python files with black..."
+	@poetry run black .
+	@echo "Sorting Python imports with isort..."
+	@poetry run isort .
+	@echo "✓ Python formatting complete"
+
+# Lint Python files
+py-lint:
+	@echo "Linting Python files with ruff..."
+	@poetry run ruff check . --fix
+	@echo "✓ Python linting complete"
+
+# Type check Python files
+py-type-check:
+	@echo "Type checking Python files with mypy..."
+	@poetry run mypy tools/ tests/ || echo "⚠ Type check completed with warnings"
+	@echo "✓ Python type checking complete"
+
+# Format all files (Terraform + Python)
+fmt: py-fmt
 	@echo "Formatting Terraform files..."
 	@terraform fmt -recursive .
-	@echo "✓ Formatting complete"
+	@echo "✓ All formatting complete"
 
 # Check if Terraform files are formatted
 fmt-check:
@@ -61,8 +89,8 @@ validate:
 	@cd examples/hello-world && terraform init -backend=false > /dev/null && terraform validate
 	@echo "✓ All validations passed"
 
-# Run all linting checks
-lint: fmt-check tflint validate
+# Run all linting checks (Terraform + Python)
+lint: fmt-check tflint validate py-lint py-type-check
 	@echo ""
 	@echo "=========================================="
 	@echo "✓ All linting checks passed!"

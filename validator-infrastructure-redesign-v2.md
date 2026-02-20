@@ -625,7 +625,7 @@ The migration follows a simple pattern: deploy new validators using the new arch
 ```
 Step 1: Build New Infrastructure (Weeks 1-3)
 ├─ Develop Terraform modules
-├─ Develop Helm charts  
+├─ Develop Helm charts
 └─ Test in dev environment
 
 Step 2: Deploy New Validators (Weeks 4-6)
@@ -822,7 +822,7 @@ A: No. AWS Secrets Manager is sufficient for most use cases. HCP Vault is only n
 
 ---
 
-**Document Status:** Ready for Review  
+**Document Status:** Ready for Review
 **Next Steps:** Architecture review meeting, stakeholder approval, implementation planning
 
 **Version History:**
