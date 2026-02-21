@@ -46,12 +46,11 @@ repos:
         description: Validate Terraform files
         exclude: ^examples/
 
-      # Disabled - requires tflint to be installed
-      # - id: terraform_tflint
-      #   name: TFLint
-      #   description: Lint Terraform files with tflint
-      #   args:
-      #     - --args=--config=__GIT_WORKING_DIR__/.tflint.hcl
+      - id: terraform_tflint
+        name: TFLint
+        description: Lint Terraform files with tflint
+        args:
+          - --args=--config=__GIT_WORKING_DIR__/.tflint.hcl
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.5.0

@@ -27,7 +27,6 @@ module "eks" {
 
   cluster_name        = "${var.validator_name}-cluster"
   kubernetes_version  = var.kubernetes_version
-  vpc_id              = module.network.vpc_id
   private_subnet_ids  = module.network.private_subnet_ids
   node_instance_types = var.node_instance_types
   node_desired_size   = var.node_desired_size

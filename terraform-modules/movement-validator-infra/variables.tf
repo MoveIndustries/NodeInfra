@@ -14,11 +14,6 @@ variable "kubernetes_version" {
   default     = "1.35"
 }
 
-variable "vpc_id" {
-  description = "VPC ID from network-base module"
-  type        = string
-}
-
 variable "private_subnet_ids" {
   description = "Private subnet IDs for node group"
   type        = list(string)
@@ -32,12 +27,6 @@ variable "control_plane_subnet_ids" {
 
 variable "control_plane_security_group_id" {
   description = "Security group ID for EKS control plane"
-  type        = string
-  default     = ""
-}
-
-variable "node_security_group_id" {
-  description = "Security group ID for EKS nodes"
   type        = string
   default     = ""
 }

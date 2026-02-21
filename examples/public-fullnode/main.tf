@@ -4,13 +4,12 @@ provider "aws" {
 }
 
 locals {
-  fullnode_bootstrap_enabled       = var.fullnode_bootstrap_s3_bucket != ""
-  fullnode_bootstrap_prefix        = trim(var.fullnode_bootstrap_s3_prefix, "/")
-  fullnode_bootstrap_object_arn    = local.fullnode_bootstrap_prefix != "" ? "arn:aws:s3:::${var.fullnode_bootstrap_s3_bucket}/${local.fullnode_bootstrap_prefix}/*" : "arn:aws:s3:::${var.fullnode_bootstrap_s3_bucket}/*"
-  fullnode_bootstrap_s3_uri        = local.fullnode_bootstrap_enabled ? "s3://${var.fullnode_bootstrap_s3_bucket}${local.fullnode_bootstrap_prefix != "" ? "/${local.fullnode_bootstrap_prefix}" : ""}" : ""
-  fullnode_bootstrap_region        = var.fullnode_bootstrap_s3_region != "" ? var.fullnode_bootstrap_s3_region : var.region
-  fullnode_service_account_name    = var.fullnode_service_account_name != "" ? var.fullnode_service_account_name : (local.fullnode_bootstrap_enabled ? "${var.fullnode_id}-s3" : "")
-  fullnode_service_account_enabled = local.fullnode_service_account_name != ""
+  fullnode_bootstrap_enabled    = var.fullnode_bootstrap_s3_bucket != ""
+  fullnode_bootstrap_prefix     = trim(var.fullnode_bootstrap_s3_prefix, "/")
+  fullnode_bootstrap_object_arn = local.fullnode_bootstrap_prefix != "" ? "arn:aws:s3:::${var.fullnode_bootstrap_s3_bucket}/${local.fullnode_bootstrap_prefix}/*" : "arn:aws:s3:::${var.fullnode_bootstrap_s3_bucket}/*"
+  fullnode_bootstrap_s3_uri     = local.fullnode_bootstrap_enabled ? "s3://${var.fullnode_bootstrap_s3_bucket}${local.fullnode_bootstrap_prefix != "" ? "/${local.fullnode_bootstrap_prefix}" : ""}" : ""
+  fullnode_bootstrap_region     = var.fullnode_bootstrap_s3_region != "" ? var.fullnode_bootstrap_s3_region : var.region
+  fullnode_service_account_name = var.fullnode_service_account_name != "" ? var.fullnode_service_account_name : (local.fullnode_bootstrap_enabled ? "${var.fullnode_id}-s3" : "")
 }
 
 # Network Infrastructure
@@ -36,10 +35,8 @@ module "eks" {
   cluster_name       = "${var.validator_name}-cluster"
   kubernetes_version = var.kubernetes_version
 
-  vpc_id                          = module.network.vpc_id
   private_subnet_ids              = module.network.private_subnet_ids
   control_plane_security_group_id = module.network.control_plane_security_group_id
-  node_security_group_id          = module.network.node_security_group_id
 
   node_instance_types = var.node_instance_types
   node_desired_size   = 1
