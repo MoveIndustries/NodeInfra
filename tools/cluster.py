@@ -20,6 +20,7 @@ class ClusterManager:
         terraform_dir: Path,
         chart_dir: Path,
         root_dir: Path | None = None,
+        terraform_state_file: Path | None = None,
     ):
         """
         Initialize cluster manager.
@@ -28,12 +29,13 @@ class ClusterManager:
             terraform_dir: Directory containing Terraform configuration
             chart_dir: Directory containing Helm chart
             root_dir: Root directory for resolving relative paths
+            terraform_state_file: Optional path to terraform state file
         """
         self.terraform_dir = terraform_dir
         self.chart_dir = chart_dir
         self.root_dir = root_dir or terraform_dir.parent
 
-        self.terraform = TerraformManager(terraform_dir)
+        self.terraform = TerraformManager(terraform_dir, terraform_state_file)
 
     def deploy(
         self,

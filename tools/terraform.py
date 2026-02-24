@@ -12,16 +12,24 @@ from .utils import fail, info, run_command, success, warn
 class TerraformManager:
     """Manages Terraform operations for infrastructure provisioning."""
 
-    def __init__(self, working_dir: Path):
+    def __init__(self, working_dir: Path, state_file: Path | None = None):
         """
         Initialize Terraform manager.
 
         Args:
             working_dir: Directory containing Terraform configuration
+            state_file: Optional path to terraform state file (if not in working_dir)
         """
         self.working_dir = working_dir
+        self.state_file = state_file
         if not self.working_dir.exists():
             fail(f"Terraform directory not found: {working_dir}")
+
+    def _get_state_args(self) -> list[str]:
+        """Get terraform state arguments if custom state file is specified."""
+        if self.state_file:
+            return ["-state", str(self.state_file)]
+        return []
 
     def init(self, upgrade: bool = True) -> None:
         """
@@ -81,6 +89,7 @@ class TerraformManager:
         else:
             if auto_approve:
                 cmd.append("-auto-approve")
+            cmd.extend(self._get_state_args())
             if var_args:
                 cmd.extend(var_args)
 
@@ -99,6 +108,7 @@ class TerraformManager:
         cmd = ["terraform", "destroy"]
         if auto_approve:
             cmd.append("-auto-approve")
+        cmd.extend(self._get_state_args())
         if var_args:
             cmd.extend(var_args)
         run_command(cmd, cwd=self.working_dir)
@@ -111,8 +121,10 @@ class TerraformManager:
         Returns:
             Dictionary of output values
         """
+        cmd = ["terraform", "output", "-json"]
+        cmd.extend(self._get_state_args())
         proc = run_command(
-            ["terraform", "output", "-json"],
+            cmd,
             cwd=self.working_dir,
             capture=True,
             check=False,
@@ -151,6 +163,7 @@ class TerraformManager:
         cmd = ["terraform", "output"]
         if raw:
             cmd.append("-raw")
+        cmd.extend(self._get_state_args())
         cmd.append(key)
 
         proc = run_command(cmd, cwd=self.working_dir, capture=True, check=False, verbose=False)

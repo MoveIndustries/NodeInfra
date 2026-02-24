@@ -41,9 +41,9 @@ variable "dns_zone_name" {
 }
 
 variable "node_instance_types" {
-  description = "EC2 instance types for nodes"
+  description = "EC2 instance types for nodes (minimum 4 vCPU, 24GB RAM)"
   type        = list(string)
-  default     = ["r6a.xlarge", "r6i.xlarge", "m6a.2xlarge"]
+  default     = ["r5.xlarge", "r6a.xlarge", "m5.2xlarge", "m6a.2xlarge"]
 }
 
 variable "node_desired_size" {

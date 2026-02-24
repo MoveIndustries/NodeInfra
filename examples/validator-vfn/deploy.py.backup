@@ -19,7 +19,7 @@ from pathlib import Path
 # Add parent directory to path to import tools
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from tools import ClusterManager, error, info, success
+from tools import ClusterManager, error, info, run_deployment_cli, success
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT_DIR = SCRIPT_DIR.parents[1]
@@ -86,15 +86,9 @@ def build_terraform_vars(env_vars: dict) -> dict:
     if "VALIDATOR_NAME" in env_vars:
         variables["validator_name"] = env_vars["VALIDATOR_NAME"]
     if "AWS_REGION" in env_vars:
-        variables["aws_region"] = env_vars["AWS_REGION"]
-    if "AWS_PROFILE" in env_vars:
-        variables["aws_profile"] = env_vars["AWS_PROFILE"]
+        variables["region"] = env_vars["AWS_REGION"]
     if "VPC_CIDR" in env_vars:
         variables["vpc_cidr"] = env_vars["VPC_CIDR"]
-    if "KUBERNETES_VERSION" in env_vars:
-        variables["kubernetes_version"] = env_vars["KUBERNETES_VERSION"]
-    if "NAMESPACE" in env_vars:
-        variables["namespace"] = env_vars["NAMESPACE"]
 
     # DNS configuration
     enable_dns = env_vars.get("ENABLE_DNS", "false").lower() in ("true", "1", "yes")
@@ -198,13 +192,7 @@ def deploy_node(
     success(f"{node_type.upper()} '{node_name}' deployed successfully")
 
 
-def deploy(
-    env_vars: dict,
-    force_create: bool,
-    validate: bool,
-    terraform_state_file: Path = None,
-    cluster_manager: ClusterManager = None,
-) -> bool:
+def deploy(env_vars: dict, force_create: bool, validate: bool, terraform_state_file: Path = None, cluster_manager: ClusterManager = None) -> bool:
     """Deploy validator cluster with intelligent topology handling.
 
     Args:
@@ -225,7 +213,7 @@ def deploy(
                 terraform_dir=SCRIPT_DIR,
                 chart_dir=CHART_DIR,
                 root_dir=ROOT_DIR,
-                terraform_state_file=terraform_state_file,
+                terraform_state_file=terraform_state_file
             )
 
         # Get topology configuration
@@ -242,158 +230,156 @@ def deploy(
         # Display deployment plan
         info("Deployment Topology:")
         info(f"  Validator: {validator_name} (ClusterIP - private)")
-        if deploy_vfn and deploy_fullnode:
-            info(f"  VFN: {vfn_name} (ClusterIP - private)")
-            info(f"  Fullnode: {fullnode_name} (LoadBalancer - public)")
-            info("  → 3-tier setup: External clients access fullnode")
-        elif deploy_vfn:
-            info(f"  VFN: {vfn_name} (LoadBalancer - public)")
-            info("  → 2-tier setup: External clients access VFN")
-        else:
-            info("  → Validator-only setup: No public access")
+    if deploy_vfn and deploy_fullnode:
+        info(f"  VFN: {vfn_name} (ClusterIP - private)")
+        info(f"  Fullnode: {fullnode_name} (LoadBalancer - public)")
+        info("  → 3-tier setup: External clients access fullnode")
+    elif deploy_vfn:
+        info(f"  VFN: {vfn_name} (LoadBalancer - public)")
+        info("  → 2-tier setup: External clients access VFN")
+    else:
+        info("  → Validator-only setup: No public access")
 
-        # Step 1: Provision infrastructure
-        terraform_vars = build_terraform_vars(env_vars)
-        outputs = cluster.terraform.get_outputs() or {}
+    # Step 1: Provision infrastructure
+    terraform_vars = build_terraform_vars(env_vars)
+    outputs = cluster.terraform.get_outputs() or {}
 
-        if not force_create and outputs:
-            info("Infrastructure already exists, skipping Terraform")
-        else:
-            cluster.terraform.init(upgrade=True)
-            cluster.terraform.validate()
-            var_args = cluster.terraform.build_var_args(terraform_vars)
-            cluster.terraform.apply(var_args=var_args, auto_approve=True)
-            outputs = cluster.terraform.get_outputs()
+    if not force_create and outputs:
+        info("Infrastructure already exists, skipping Terraform")
+    else:
+        cluster.terraform.init(upgrade=True)
+        cluster.terraform.validate()
+        var_args = cluster.terraform.build_var_args(terraform_vars)
+        cluster.terraform.apply(var_args=var_args, auto_approve=True)
+        outputs = cluster.terraform.get_outputs()
 
-        # Update kubeconfig
-        cluster_name = outputs.get(
-            "cluster_name", f"{env_vars.get('VALIDATOR_NAME', 'validator')}-cluster"
+    # Update kubeconfig
+    cluster_name = outputs.get(
+        "cluster_name", f"{env_vars.get('VALIDATOR_NAME', 'validator')}-cluster"
+    )
+    region = outputs.get("region", env_vars.get("AWS_REGION", "us-east-1"))
+
+    from tools.eks import EKSManager
+
+    eks = EKSManager(cluster_name, region)
+    eks.wait_until_active()
+    eks.update_kubeconfig()
+
+    # Step 1.5: Create validator secret from AWS Secrets Manager (if configured)
+    aws_secret_name = env_vars.get("VALIDATOR_KEYS_SECRET_NAME", "")
+    if aws_secret_name:
+        info("\n" + "=" * 80)
+        info("Creating Kubernetes Secret from AWS Secrets Manager")
+        info("=" * 80)
+        create_validator_secret_from_aws_sm(
+            namespace=namespace,
+            secret_name=validator_keys_secret,
+            aws_secret_name=aws_secret_name,
+            region=region,
         )
-        region = outputs.get("region", env_vars.get("AWS_REGION", "us-east-1"))
+    else:
+        info(f"Skipping AWS Secrets Manager (using existing K8s secret: {validator_keys_secret})")
 
-        from tools.eks import EKSManager
+    # Step 2: Deploy nodes in order
+    from tools.helm import HelmManager
 
-        eks = EKSManager(cluster_name, region)
-        eks.wait_until_active()
-        eks.update_kubeconfig()
+    helm = HelmManager(CHART_DIR)
 
-        # Step 1.5: Create validator secret from AWS Secrets Manager (if configured)
-        aws_secret_name = env_vars.get("VALIDATOR_KEYS_SECRET_NAME", "")
-        if aws_secret_name:
-            info("\n" + "=" * 80)
-            info("Creating Kubernetes Secret from AWS Secrets Manager")
-            info("=" * 80)
-            create_validator_secret_from_aws_sm(
-                namespace=namespace,
-                secret_name=validator_keys_secret,
-                aws_secret_name=aws_secret_name,
-                region=region,
-            )
-        else:
-            info(
-                f"Skipping AWS Secrets Manager (using existing K8s secret: {validator_keys_secret})"
-            )
+    # Deploy validator first (always ClusterIP)
+    deploy_node(
+        helm=helm,
+        node_type="validator",
+        node_name=validator_name,
+        namespace=namespace,
+        service_type="ClusterIP",
+        validator_keys_secret=validator_keys_secret,
+    )
 
-        # Step 2: Deploy nodes in order
-        from tools.helm import HelmManager
+    # Deploy VFN if requested
+    if deploy_vfn:
+        # VFN service type depends on whether fullnode is deployed
+        vfn_service_type = "ClusterIP" if deploy_fullnode else "LoadBalancer"
 
-        helm = HelmManager(CHART_DIR)
-
-        # Deploy validator first (always ClusterIP)
         deploy_node(
             helm=helm,
-            node_type="validator",
-            node_name=validator_name,
+            node_type="vfn",
+            node_name=vfn_name,
             namespace=namespace,
-            service_type="ClusterIP",
-            validator_keys_secret=validator_keys_secret,
+            service_type=vfn_service_type,
+            validator_service=validator_name,
         )
 
-        # Deploy VFN if requested
-        if deploy_vfn:
-            # VFN service type depends on whether fullnode is deployed
-            vfn_service_type = "ClusterIP" if deploy_fullnode else "LoadBalancer"
+    # Deploy fullnode if requested
+    if deploy_fullnode:
+        deploy_node(
+            helm=helm,
+            node_type="fullnode",
+            node_name=fullnode_name,
+            namespace=namespace,
+            service_type="LoadBalancer",
+            vfn_service=vfn_name if deploy_vfn else None,
+        )
 
-            deploy_node(
-                helm=helm,
-                node_type="vfn",
-                node_name=vfn_name,
-                namespace=namespace,
-                service_type=vfn_service_type,
-                validator_service=validator_name,
-            )
+    # Step 3: Validation (if requested)
+    if validate:
+        from tools.validation import validate_deployment, wait_for_pods_ready
 
-        # Deploy fullnode if requested
-        if deploy_fullnode:
-            deploy_node(
-                helm=helm,
-                node_type="fullnode",
-                node_name=fullnode_name,
-                namespace=namespace,
-                service_type="LoadBalancer",
-                vfn_service=vfn_name if deploy_vfn else None,
-            )
-
-        # Step 3: Validation (if requested)
-        if validate:
-            from tools.validation import validate_deployment, wait_for_pods_ready
-
-            info("\n" + "=" * 80)
-            info("Validating All Nodes")
-            info("=" * 80)
-
-            # Build list of all deployed pods
-            pods_to_check = [validator_name]
-            if deploy_vfn:
-                pods_to_check.append(vfn_name)
-            if deploy_fullnode:
-                pods_to_check.append(fullnode_name)
-
-            # Wait for all pods and check their API health
-            wait_for_pods_ready(
-                namespace=namespace,
-                pod_names=pods_to_check,
-                timeout=3600,
-                check_api_health=True,
-            )
-
-            # Final validation: check public endpoint if available
-            if deploy_fullnode or deploy_vfn:
-                validate_service = fullnode_name if deploy_fullnode else vfn_name
-
-                info(f"\nValidating public endpoint: {validate_service}")
-                validate_deployment(
-                    namespace=namespace,
-                    service_name=validate_service,
-                    pod_timeout=3600,
-                    lb_retries=60,
-                )
-
-        success("Deployment complete!")
-
-        # Print access information
         info("\n" + "=" * 80)
-        info("Access Information:")
+        info("Validating All Nodes")
         info("=" * 80)
 
-        if deploy_fullnode:
-            info("\n🌐 Public Access: Fullnode LoadBalancer")
-            info(f"   Service: {fullnode_name}")
-            info(f"   kubectl get svc {fullnode_name} -n {namespace}")
-        elif deploy_vfn:
-            info("\n🌐 Public Access: VFN LoadBalancer")
-            info(f"   Service: {vfn_name}")
-            info(f"   kubectl get svc {vfn_name} -n {namespace}")
-
-        info("\n📊 Check pod status:")
-        info(f"   kubectl get pods -n {namespace}")
-
-        info("\n📝 View logs:")
-        info(f"   kubectl logs {validator_name}-0 -n {namespace}")
+        # Build list of all deployed pods
+        pods_to_check = [validator_name]
         if deploy_vfn:
-            info(f"   kubectl logs {vfn_name}-0 -n {namespace}")
+            pods_to_check.append(vfn_name)
         if deploy_fullnode:
-            info(f"   kubectl logs {fullnode_name}-0 -n {namespace}")
+            pods_to_check.append(fullnode_name)
+
+        # Wait for all pods and check their API health
+        wait_for_pods_ready(
+            namespace=namespace,
+            pod_names=pods_to_check,
+            timeout=3600,
+            check_api_health=True,
+        )
+
+        # Final validation: check public endpoint if available
+        if deploy_fullnode or deploy_vfn:
+            validate_service = fullnode_name if deploy_fullnode else vfn_name
+
+            info(f"\nValidating public endpoint: {validate_service}")
+            validate_deployment(
+                namespace=namespace,
+                service_name=validate_service,
+                pod_timeout=3600,
+                lb_retries=60,
+            )
+
+    success("Deployment complete!")
+
+    # Print access information
+    info("\n" + "=" * 80)
+    info("Access Information:")
+    info("=" * 80)
+
+    if deploy_fullnode:
+        info("\n🌐 Public Access: Fullnode LoadBalancer")
+        info(f"   Service: {fullnode_name}")
+        info(f"   kubectl get svc {fullnode_name} -n {namespace}")
+    elif deploy_vfn:
+        info("\n🌐 Public Access: VFN LoadBalancer")
+        info(f"   Service: {vfn_name}")
+        info(f"   kubectl get svc {vfn_name} -n {namespace}")
+
+    info("\n📊 Check pod status:")
+    info(f"   kubectl get pods -n {namespace}")
+
+    info("\n📝 View logs:")
+    info(f"   kubectl logs {validator_name}-0 -n {namespace}")
+    if deploy_vfn:
+        info(f"   kubectl logs {vfn_name}-0 -n {namespace}")
+    if deploy_fullnode:
+        info(f"   kubectl logs {fullnode_name}-0 -n {namespace}")
         info("=" * 80 + "\n")
 
         return True
@@ -402,9 +388,7 @@ def deploy(
         return False
 
 
-def destroy(
-    env_vars: dict, terraform_state_file: Path = None, cluster_manager: ClusterManager = None
-) -> bool:
+def destroy(env_vars: dict, terraform_state_file: Path = None, cluster_manager: ClusterManager = None) -> bool:
     """Destroy all deployed resources.
 
     Args:
@@ -423,56 +407,56 @@ def destroy(
                 terraform_dir=SCRIPT_DIR,
                 chart_dir=CHART_DIR,
                 root_dir=ROOT_DIR,
-                terraform_state_file=terraform_state_file,
+                terraform_state_file=terraform_state_file
             )
 
-        namespace = env_vars.get("NAMESPACE", "movement-l1")
-        validator_name = env_vars.get("VALIDATOR_NAME", "validator-01")
-        vfn_name = env_vars.get("VFN_NAME", "vfn-01")
-        fullnode_name = env_vars.get("FULLNODE_NAME", "fullnode-01")
-        deploy_vfn = env_vars.get("DEPLOY_VFN", "true").lower() in ("true", "1", "yes")
-        deploy_fullnode = env_vars.get("DEPLOY_FULLNODE", "false").lower() in ("true", "1", "yes")
+    namespace = env_vars.get("NAMESPACE", "movement-l1")
+    validator_name = env_vars.get("VALIDATOR_NAME", "validator-01")
+    vfn_name = env_vars.get("VFN_NAME", "vfn-01")
+    fullnode_name = env_vars.get("FULLNODE_NAME", "fullnode-01")
+    deploy_vfn = env_vars.get("DEPLOY_VFN", "true").lower() in ("true", "1", "yes")
+    deploy_fullnode = env_vars.get("DEPLOY_FULLNODE", "false").lower() in ("true", "1", "yes")
 
-        # Get cluster info from terraform
-        outputs = cluster.terraform.get_outputs()
+    # Get cluster info from terraform
+    outputs = cluster.terraform.get_outputs()
 
-        if outputs:
-            cluster_name = outputs.get("cluster_name")
-            region = outputs.get("region", env_vars.get("AWS_REGION", "us-east-1"))
+    if outputs:
+        cluster_name = outputs.get("cluster_name")
+        region = outputs.get("region", env_vars.get("AWS_REGION", "us-east-1"))
 
-            if cluster_name:
-                try:
-                    from tools.eks import EKSManager
-                    from tools.helm import HelmManager
+        if cluster_name:
+            try:
+                from tools.eks import EKSManager
+                from tools.helm import HelmManager
 
-                    # Update kubeconfig
-                    eks = EKSManager(cluster_name, region)
-                    eks.update_kubeconfig()
+                # Update kubeconfig
+                eks = EKSManager(cluster_name, region)
+                eks.update_kubeconfig()
 
-                    # Uninstall Helm releases in reverse order
-                    helm = HelmManager(CHART_DIR)
+                # Uninstall Helm releases in reverse order
+                helm = HelmManager(CHART_DIR)
 
-                    if deploy_fullnode:
-                        info(f"Uninstalling {fullnode_name}...")
-                        helm.uninstall(fullnode_name, namespace)
-                    if deploy_vfn:
-                        info(f"Uninstalling {vfn_name}...")
-                        helm.uninstall(vfn_name, namespace)
+                if deploy_fullnode:
+                    info(f"Uninstalling {fullnode_name}...")
+                    helm.uninstall(fullnode_name, namespace)
+                if deploy_vfn:
+                    info(f"Uninstalling {vfn_name}...")
+                    helm.uninstall(vfn_name, namespace)
 
-                    info(f"Uninstalling {validator_name}...")
-                    helm.uninstall(validator_name, namespace)
+                info(f"Uninstalling {validator_name}...")
+                helm.uninstall(validator_name, namespace)
 
-                    success("Helm releases uninstalled")
-                except Exception as e:
-                    info(f"Warning: Failed to uninstall Helm releases: {e}")
-                    info("Continuing with Terraform destroy...")
+                success("Helm releases uninstalled")
+            except Exception as e:
+                info(f"Warning: Failed to uninstall Helm releases: {e}")
+                info("Continuing with Terraform destroy...")
 
-        # Destroy Terraform infrastructure
-        info("Destroying Terraform infrastructure...")
-        # Note: Terraform destroy uses the state file and doesn't need variables
-        # This ensures destroy works even if .env variables have changed since deployment
-        cluster.terraform.init()
-        cluster.terraform.destroy(auto_approve=True)
+    # Destroy Terraform infrastructure
+    info("Destroying Terraform infrastructure...")
+    terraform_vars = build_terraform_vars(env_vars)
+    cluster.terraform.init()
+    var_args = cluster.terraform.build_var_args(terraform_vars)
+    cluster.terraform.destroy(var_args=var_args, auto_approve=True)
 
         success("Deployment destroyed successfully!")
         return True
@@ -498,12 +482,11 @@ def deploy_with_config(env_file_path: Path = None, **kwargs) -> bool:
         return False
 
     from tools.utils import load_env_file
-
     env_vars = load_env_file(env_file)
 
     # Extract deployment options from kwargs or env_vars
-    force_create = kwargs.get("force_create", False)
-    validate = kwargs.get("validate", False)
+    force_create = kwargs.get('force_create', False)
+    validate = kwargs.get('validate', False)
 
     return deploy(env_vars, force_create, validate, **kwargs)
 
@@ -525,7 +508,6 @@ def destroy_with_config(env_file_path: Path = None, **kwargs) -> bool:
         return False
 
     from tools.utils import load_env_file
-
     env_vars = load_env_file(env_file)
 
     return destroy(env_vars, **kwargs)
