@@ -164,6 +164,9 @@ class ClusterManager:
         """
         info("Destroying deployment")
 
+        # Ensure providers are available for terraform output/destroy in clean environments.
+        self.terraform.init(upgrade=False)
+
         outputs = self.terraform.get_outputs()
 
         if outputs:
