@@ -1,6 +1,12 @@
 provider "aws" {
   region  = var.region
   profile = var.aws_profile != "" ? var.aws_profile : null
+
+  default_tags {
+    tags = merge(var.tags, {
+      Validator = var.validator_name
+    })
+  }
 }
 
 # Network infrastructure

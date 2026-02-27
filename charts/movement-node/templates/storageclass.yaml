@@ -10,11 +10,7 @@ reclaimPolicy: Delete
 volumeBindingMode: WaitForFirstConsumer
 allowVolumeExpansion: true
 parameters:
-  type: {{ .Values.storage.parameters.type | quote }}
-  {{- if .Values.storage.parameters.iops }}
-  iops: {{ .Values.storage.parameters.iops | quote }}
-  {{- end }}
-  {{- if .Values.storage.parameters.throughput }}
-  throughput: {{ .Values.storage.parameters.throughput | quote }}
+  {{- range $k, $v := .Values.storage.parameters }}
+  {{ $k }}: {{ $v | quote }}
   {{- end }}
 {{- end }}

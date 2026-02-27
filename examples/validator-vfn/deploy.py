@@ -13,13 +13,15 @@ Supported topologies:
 
 from __future__ import annotations
 
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 # Add parent directory to path to import tools
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from tools import ClusterManager, HelmManager, error, info, run_deployment_cli, success
+from tools import ClusterManager, HelmManager, error, info, run_command, run_deployment_cli, success
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT_DIR = SCRIPT_DIR.parents[1]
@@ -89,8 +91,8 @@ def build_terraform_vars(env_vars: dict) -> dict:
     """Map environment variables to Terraform variables."""
     variables = {}
 
-    if "VALIDATOR_NAME" in env_vars:
-        variables["validator_name"] = env_vars["VALIDATOR_NAME"]
+    validator_name = env_vars.get("VALIDATOR_NAME", "validator-01")
+    variables["validator_name"] = validator_name
     if "AWS_REGION" in env_vars:
         variables["region"] = env_vars["AWS_REGION"]
     if "VPC_CIDR" in env_vars:
@@ -124,6 +126,7 @@ def build_terraform_vars(env_vars: dict) -> dict:
     variables["node_desired_size"] = node_count
     variables["node_min_size"] = node_count
     variables["node_max_size"] = node_count + 2
+    variables["tags"] = {"Validator": validator_name}
 
     return variables
 
@@ -133,6 +136,7 @@ def deploy_node(
     node_type: str,
     node_name: str,
     namespace: str,
+    validator_name: str,
     service_type: str | None = None,
     validator_service: str | None = None,
     vfn_service: str | None = None,
@@ -157,6 +161,10 @@ def deploy_node(
         "bootstrap.s3.bucket": "movement-2026-02-11-backup",
         "bootstrap.s3.prefix": "testnet/db",
         "bootstrap.s3.region": "us-west-2",
+        "service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-type": "nlb",
+        "service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-scheme": "internet-facing",
+        "service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-additional-resource-tags": f"Validator={validator_name}",
+        "storage.parameters.tagSpecification_1": f"Validator={validator_name}",
     }
 
     # Override service type if specified
@@ -301,6 +309,7 @@ def deploy(env_vars: dict, force_create: bool, validate: bool) -> None:
         node_type="validator",
         node_name=validator_name,
         namespace=namespace,
+        validator_name=validator_name,
         service_type=validator_service_type,
         validator_keys_secret=validator_keys_secret,
     )
@@ -315,6 +324,7 @@ def deploy(env_vars: dict, force_create: bool, validate: bool) -> None:
             node_type="vfn",
             node_name=vfn_name,
             namespace=namespace,
+            validator_name=validator_name,
             service_type=vfn_service_type,
             validator_service=validator_name,
         )
@@ -326,6 +336,7 @@ def deploy(env_vars: dict, force_create: bool, validate: bool) -> None:
             node_type="fullnode",
             node_name=fullnode_name,
             namespace=namespace,
+            validator_name=validator_name,
             service_type="LoadBalancer",
             vfn_service=vfn_name if deploy_vfn else None,
         )
@@ -395,6 +406,67 @@ def deploy(env_vars: dict, force_create: bool, validate: bool) -> None:
     return True
 
 
+def run_aws_nuke_by_tag(env_vars: dict) -> None:
+    """Sweep leftover AWS resources tagged with Validator=<validator_name>."""
+    validator_name = env_vars.get("VALIDATOR_NAME", "validator-01")
+    region = env_vars.get("AWS_REGION", "us-east-1")
+    profile = env_vars.get("AWS_PROFILE", "")
+
+    if not shutil.which("aws-nuke"):
+        raise RuntimeError("aws-nuke not found in PATH")
+
+    aws_env = {"AWS_REGION": region, "AWS_DEFAULT_REGION": region}
+    if profile:
+        aws_env["AWS_PROFILE"] = profile
+
+    account_cmd = ["aws", "sts", "get-caller-identity", "--query", "Account", "--output", "text"]
+    account_proc = run_command(account_cmd, capture=True, env=aws_env)
+    account_id = (account_proc.stdout or "").strip()
+    if not account_id:
+        raise RuntimeError("Unable to resolve AWS account for aws-nuke")
+
+    nuke_config = f"""regions:
+  - {region}
+  - global
+account-blocklist:
+  - "999999999999"
+accounts:
+  "{account_id}":
+    filters:
+      __global__:
+        - property: "tag:Validator"
+          value: "{validator_name}"
+          invert: true
+"""
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as tmp:
+        tmp.write(nuke_config)
+        config_path = tmp.name
+
+    try:
+        # Prefer aws-nuke v3 CLI syntax.
+        cmd_v3 = ["aws-nuke", "run", "--config", config_path, "--no-dry-run", "--force"]
+        if profile:
+            cmd_v3.extend(["--profile", profile])
+        proc = run_command(cmd_v3, capture=True, check=False, env=aws_env)
+        if proc.returncode == 0:
+            success(f"aws-nuke sweep complete for tag Validator={validator_name}")
+            return
+
+        # Fallback for older aws-nuke CLI syntax.
+        cmd_v2 = ["aws-nuke", "-c", config_path, "--no-dry-run", "--force"]
+        if profile:
+            cmd_v2.extend(["--profile", profile])
+        proc = run_command(cmd_v2, capture=True, check=False, env=aws_env)
+        if proc.returncode != 0:
+            detail = (proc.stderr or proc.stdout or "").strip()
+            raise RuntimeError(f"aws-nuke failed for Validator={validator_name}: {detail}")
+
+        success(f"aws-nuke sweep complete for tag Validator={validator_name}")
+    finally:
+        Path(config_path).unlink(missing_ok=True)
+
+
 def destroy(env_vars: dict) -> None:
     """Destroy all deployed resources."""
     cluster = ClusterManager(SCRIPT_DIR, CHART_DIR, ROOT_DIR)
@@ -417,6 +489,7 @@ def destroy(env_vars: dict) -> None:
     # Destroy Terraform infrastructure
     terraform_vars = build_terraform_vars(env_vars)
     cluster.destroy(terraform_vars)
+    run_aws_nuke_by_tag(env_vars)
 
 
 if __name__ == "__main__":
