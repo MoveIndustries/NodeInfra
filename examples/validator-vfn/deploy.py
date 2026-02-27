@@ -19,7 +19,7 @@ from pathlib import Path
 # Add parent directory to path to import tools
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from tools import ClusterManager, error, info, run_deployment_cli, success
+from tools import ClusterManager, HelmManager, error, info, run_deployment_cli, success
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT_DIR = SCRIPT_DIR.parents[1]
@@ -398,6 +398,7 @@ def deploy(env_vars: dict, force_create: bool, validate: bool) -> None:
 def destroy(env_vars: dict) -> None:
     """Destroy all deployed resources."""
     cluster = ClusterManager(SCRIPT_DIR, CHART_DIR, ROOT_DIR)
+    helm = HelmManager(CHART_DIR)
 
     namespace = env_vars.get("NAMESPACE", "movement-l1")
     validator_name = env_vars.get("VALIDATOR_NAME", "validator-01")
@@ -408,10 +409,10 @@ def destroy(env_vars: dict) -> None:
 
     # Uninstall Helm releases in reverse order
     if deploy_fullnode:
-        cluster.helm.uninstall(fullnode_name, namespace)
+        helm.uninstall(fullnode_name, namespace)
     if deploy_vfn:
-        cluster.helm.uninstall(vfn_name, namespace)
-    cluster.helm.uninstall(validator_name, namespace)
+        helm.uninstall(vfn_name, namespace)
+    helm.uninstall(validator_name, namespace)
 
     # Destroy Terraform infrastructure
     terraform_vars = build_terraform_vars(env_vars)
