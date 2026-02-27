@@ -45,7 +45,7 @@ output "load_balancer_security_group_id" {
 
 output "dns_zone_id" {
   description = "Route53 zone ID (empty if DNS not enabled)"
-  value       = var.dns_enabled && var.dns_zone_name != "" ? data.aws_route53_zone.main[0].zone_id : ""
+  value       = try(data.aws_route53_zone.main[0].zone_id, "")
 }
 
 output "dns_zone_name" {

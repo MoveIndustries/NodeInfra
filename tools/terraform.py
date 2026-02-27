@@ -23,6 +23,10 @@ class TerraformManager:
         if not self.working_dir.exists():
             fail(f"Terraform directory not found: {working_dir}")
 
+    def _get_state_args(self) -> list[str]:
+        """Return extra Terraform CLI args for state handling."""
+        return []
+
     def init(self, upgrade: bool = True) -> None:
         """
         Initialize Terraform.
@@ -87,18 +91,24 @@ class TerraformManager:
         run_command(cmd, cwd=self.working_dir)
         success("Terraform applied successfully")
 
-    def destroy(self, var_args: list[str] | None = None, auto_approve: bool = True) -> None:
+    def destroy(
+        self, var_args: list[str] | None = None, auto_approve: bool = True, refresh: bool = False
+    ) -> None:
         """
         Destroy Terraform-managed infrastructure.
 
         Args:
             var_args: Variable arguments to pass to Terraform
             auto_approve: Whether to auto-approve destruction
+            refresh: Whether to refresh state before destroy (default: False to avoid data source errors)
         """
         info("Destroying Terraform infrastructure")
         cmd = ["terraform", "destroy"]
         if auto_approve:
             cmd.append("-auto-approve")
+        if not refresh:
+            cmd.append("-refresh=false")
+        cmd.extend(self._get_state_args())
         if var_args:
             cmd.extend(var_args)
         run_command(cmd, cwd=self.working_dir)

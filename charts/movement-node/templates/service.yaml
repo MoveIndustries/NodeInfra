@@ -4,36 +4,43 @@ metadata:
   name: {{ include "movement-node.fullname" . }}
   labels:
     {{- include "movement-node.labels" . | nindent 4 }}
-  {{- if .Values.service.annotations }}
+{{- if .Values.service.annotations }}
   annotations:
     {{- toYaml .Values.service.annotations | nindent 4 }}
-  {{- else if and (or (eq .Values.node.type "vfn") (eq .Values.node.type "fullnode")) .Values.loadBalancer.annotations }}
+{{- else if and (or (eq .Values.node.type "vfn") (eq .Values.node.type "fullnode")) .Values.loadBalancer.annotations }}
   annotations:
     {{- toYaml .Values.loadBalancer.annotations | nindent 4 }}
-  {{- end }}
+{{- end }}
 spec:
-  {{- if .Values.service.type }}
+{{- if .Values.service.type }}
   type: {{ .Values.service.type }}
-  {{- else if eq .Values.node.type "validator" }}
+{{- else if eq .Values.node.type "validator" }}
   type: ClusterIP
-  {{- else }}
+{{- else }}
   type: LoadBalancer
-  {{- end }}
+{{- end }}
   selector:
-{{ include "movement-node.selectorLabels" . | indent 4 }}
+    {{- include "movement-node.selectorLabels" . | nindent 4 }}
   ports:
-    - name: api
-      port: {{ .Values.service.ports.api }}
-      targetPort: {{ .Values.service.ports.api }}
-      protocol: TCP
-    - name: p2p
-      port: {{ .Values.service.ports.p2p }}
-      targetPort: {{ .Values.service.ports.p2p }}
-      protocol: TCP
-{{ if .Values.service.enableMetrics }}
-    - name: metrics
-      port: {{ .Values.service.ports.metrics }}
-      targetPort: {{ .Values.service.ports.metrics }}
-      protocol: TCP
-{{ end }}
+{{- if and (eq .Values.node.type "validator") (eq .Values.service.type "LoadBalancer") }}
+  - name: validator-p2p
+    port: {{ .Values.service.ports.validator }}
+    targetPort: {{ .Values.service.ports.validator }}
+    protocol: TCP
+{{- else }}
+  - name: api
+    port: {{ .Values.service.ports.api }}
+    targetPort: {{ .Values.service.ports.api }}
+    protocol: TCP
+  - name: p2p
+    port: {{ .Values.service.ports.p2p }}
+    targetPort: {{ .Values.service.ports.p2p }}
+    protocol: TCP
+{{- end }}
+{{- if .Values.service.enableMetrics }}
+  - name: metrics
+    port: {{ .Values.service.ports.metrics }}
+    targetPort: {{ .Values.service.ports.metrics }}
+    protocol: TCP
+{{- end }}
   sessionAffinity: None

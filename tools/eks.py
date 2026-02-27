@@ -10,16 +10,18 @@ from .utils import fail, info, run_command, success
 class EKSManager:
     """Manages AWS EKS cluster operations."""
 
-    def __init__(self, cluster_name: str, region: str):
+    def __init__(self, cluster_name: str, region: str, profile: str | None = None):
         """
         Initialize EKS manager.
 
         Args:
             cluster_name: Name of the EKS cluster
             region: AWS region
+            profile: AWS profile to use (optional)
         """
         self.cluster_name = cluster_name
         self.region = region
+        self.profile = profile
 
     def cluster_exists(self) -> bool:
         """
@@ -28,16 +30,20 @@ class EKSManager:
         Returns:
             True if cluster exists, False otherwise
         """
+        cmd = [
+            "aws",
+            "eks",
+            "describe-cluster",
+            "--region",
+            self.region,
+            "--name",
+            self.cluster_name,
+        ]
+        if self.profile:
+            cmd.extend(["--profile", self.profile])
+
         proc = run_command(
-            [
-                "aws",
-                "eks",
-                "describe-cluster",
-                "--region",
-                self.region,
-                "--name",
-                self.cluster_name,
-            ],
+            cmd,
             capture=True,
             check=False,
             verbose=False,
@@ -60,20 +66,24 @@ class EKSManager:
         Returns:
             Cluster status (ACTIVE, CREATING, DELETING, etc.) or None if not found
         """
+        cmd = [
+            "aws",
+            "eks",
+            "describe-cluster",
+            "--region",
+            self.region,
+            "--name",
+            self.cluster_name,
+            "--query",
+            "cluster.status",
+            "--output",
+            "text",
+        ]
+        if self.profile:
+            cmd.extend(["--profile", self.profile])
+
         proc = run_command(
-            [
-                "aws",
-                "eks",
-                "describe-cluster",
-                "--region",
-                self.region,
-                "--name",
-                self.cluster_name,
-                "--query",
-                "cluster.status",
-                "--output",
-                "text",
-            ],
+            cmd,
             capture=True,
             check=False,
             verbose=False,
@@ -130,6 +140,9 @@ class EKSManager:
             "--name",
             self.cluster_name,
         ]
+
+        if self.profile:
+            cmd.extend(["--profile", self.profile])
 
         if kubeconfig_path:
             cmd.extend(["--kubeconfig", kubeconfig_path])

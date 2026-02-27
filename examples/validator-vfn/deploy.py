@@ -31,6 +31,7 @@ def create_validator_secret_from_aws_sm(
     secret_name: str,
     aws_secret_name: str,
     region: str,
+    profile: str | None = None,
 ) -> None:
     """Create Kubernetes secret from AWS Secrets Manager.
 
@@ -39,6 +40,7 @@ def create_validator_secret_from_aws_sm(
         secret_name: Name for the Kubernetes secret
         aws_secret_name: AWS Secrets Manager secret name
         region: AWS region
+        profile: AWS profile to use (optional)
     """
     try:
         import boto3
@@ -47,7 +49,11 @@ def create_validator_secret_from_aws_sm(
         info(f"Reading validator identity from AWS Secrets Manager: {aws_secret_name}")
 
         # Read from AWS Secrets Manager
-        sm_client = boto3.client("secretsmanager", region_name=region)
+        if profile:
+            session = boto3.Session(profile_name=profile)
+            sm_client = session.client("secretsmanager", region_name=region)
+        else:
+            sm_client = boto3.client("secretsmanager", region_name=region)
         response = sm_client.get_secret_value(SecretId=aws_secret_name)
         secret_data = response["SecretString"]
 
@@ -223,6 +229,28 @@ def deploy(env_vars: dict, force_create: bool, validate: bool) -> None:
     # Step 1: Provision infrastructure
     terraform_vars = build_terraform_vars(env_vars)
     outputs = cluster.terraform.get_outputs() or {}
+    # Check if validator should be public (for cross-cluster validator communication)
+    validator_public = env_vars.get("VALIDATOR_PUBLIC", "false").lower() in ("true", "1", "yes")
+    validator_service_type = "LoadBalancer" if validator_public else "ClusterIP"
+
+    # Display deployment plan
+    info("Deployment Topology:")
+    validator_access = "LoadBalancer - public" if validator_public else "ClusterIP - private"
+    info(f"  Validator: {validator_name} ({validator_access})")
+    if deploy_vfn and deploy_fullnode:
+        info(f"  VFN: {vfn_name} (ClusterIP - private)")
+        info(f"  Fullnode: {fullnode_name} (LoadBalancer - public)")
+        info("  → 3-tier setup: External clients access fullnode")
+    elif deploy_vfn:
+        info(f"  VFN: {vfn_name} (LoadBalancer - public)")
+        info("  → 2-tier setup: External clients access VFN")
+    else:
+        validator_note = "Public for P2P" if validator_public else "No public access"
+        info(f"  → Validator-only setup: {validator_note}")
+
+    # Step 1: Provision infrastructure
+    terraform_vars = build_terraform_vars(env_vars)
+    outputs = cluster.terraform.get_outputs() or {}
 
     if not force_create and outputs:
         info("Infrastructure already exists, skipping Terraform")
@@ -241,7 +269,8 @@ def deploy(env_vars: dict, force_create: bool, validate: bool) -> None:
 
     from tools.eks import EKSManager
 
-    eks = EKSManager(cluster_name, region)
+    profile = env_vars.get("AWS_PROFILE")
+    eks = EKSManager(cluster_name, region, profile)
     eks.wait_until_active()
     eks.update_kubeconfig()
 
@@ -256,6 +285,7 @@ def deploy(env_vars: dict, force_create: bool, validate: bool) -> None:
             secret_name=validator_keys_secret,
             aws_secret_name=aws_secret_name,
             region=region,
+            profile=profile,
         )
     else:
         info(f"Skipping AWS Secrets Manager (using existing K8s secret: {validator_keys_secret})")
@@ -265,13 +295,13 @@ def deploy(env_vars: dict, force_create: bool, validate: bool) -> None:
 
     helm = HelmManager(CHART_DIR)
 
-    # Deploy validator first (always ClusterIP)
+    # Deploy validator first (ClusterIP or LoadBalancer based on config)
     deploy_node(
         helm=helm,
         node_type="validator",
         node_name=validator_name,
         namespace=namespace,
-        service_type="ClusterIP",
+        service_type=validator_service_type,
         validator_keys_secret=validator_keys_secret,
     )
 
@@ -361,6 +391,8 @@ def deploy(env_vars: dict, force_create: bool, validate: bool) -> None:
     if deploy_fullnode:
         info(f"   kubectl logs {fullnode_name}-0 -n {namespace}")
     info("=" * 80 + "\n")
+
+    return True
 
 
 def destroy(env_vars: dict) -> None:
