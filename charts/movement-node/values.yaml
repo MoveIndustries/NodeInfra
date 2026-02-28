@@ -45,31 +45,33 @@ validator:
   # VFN connection configuration
   vfn:
     enabled: true
-    key: "b0f405a3e75516763c43a2ae1d70423699f34cd68fa9f8c6bb2d67aa87d0af69"
-    peerId: "00000000000000000000000000000000d58bc7bb154b38039bc9096ce04e1237"
+    # Set per node via deploy overrides (do not hardcode testnet constants here)
+    key: ""
+    peerId: ""
 
 # VFN-specific configuration (only used when node.type=vfn)
 vfn:
   # Upstream validator connection
   validator:
-    serviceName: "validator-01"
+    serviceName: "validator"
     namespace: "movement-l1"
-    peerId: "00000000000000000000000000000000d58bc7bb154b38039bc9096ce04e1237"
+    # Set per node via deploy overrides (do not hardcode testnet constants here)
+    peerId: ""
+    publicKey: ""
     port: 6181
 
   # Public fullnode network identity
   fullnode:
     enabled: true
-    publicKey: "18FD979E14162B541B874490D47BD26BC94A398429337C536C48F5E9C8708D7B"
-    peerId: "9967ebf40ac8c2ccb38709488952da1826176584ea3067b63b1695362ecb3d1f"
+    # Set per node via deploy overrides (do not hardcode testnet constants here)
+    publicKey: ""
+    peerId: ""
 
 # Fullnode-specific configuration (only used when node.type=fullnode)
 fullnode:
   # Upstream connection (VFN or seed nodes)
-  seeds:
-    - peerId: "9967ebf40ac8c2ccb38709488952da1826176584ea3067b63b1695362ecb3d1f"
-      addresses:
-        - "/dns/vfn-01.movement-l1.svc.cluster.local/tcp/6182/noise-ik/9967ebf40ac8c2ccb38709488952da1826176584ea3067b63b1695362ecb3d1f/handshake/0"
+  # Set per node via deploy overrides
+  seeds: []
 
 # Resource requests and limits
 # Sized for r6a.xlarge (4 vCPU, 32GB) or m6a.2xlarge (8 vCPU, 32GB)

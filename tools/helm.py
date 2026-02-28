@@ -28,6 +28,7 @@ class HelmManager:
         set_values: dict[str, str] | None = None,
         set_files: dict[str, Path] | None = None,
         create_namespace: bool = True,
+        reset_values: bool = False,
         wait: bool = False,
         timeout: str = "5m",
     ) -> None:
@@ -41,6 +42,7 @@ class HelmManager:
             set_values: Dictionary of simple key=value pairs to set
             set_files: Dictionary of key=filepath pairs to set from file
             create_namespace: Whether to create namespace if it doesn't exist
+            reset_values: Whether to reset to chart defaults before applying values
             wait: Whether to wait for resources to be ready
             timeout: Timeout for wait operation
         """
@@ -58,6 +60,9 @@ class HelmManager:
 
         if create_namespace:
             cmd.append("--create-namespace")
+
+        if reset_values:
+            cmd.append("--reset-values")
 
         if wait:
             cmd.extend(["--wait", "--timeout", timeout])

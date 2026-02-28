@@ -22,10 +22,18 @@ spec:
   selector:
     {{- include "movement-node.selectorLabels" . | nindent 4 }}
   ports:
-{{- if and (eq .Values.node.type "validator") (eq .Values.service.type "LoadBalancer") }}
-  - name: validator-p2p
+{{- if eq .Values.node.type "validator" }}
+  - name: validator
     port: {{ .Values.service.ports.validator }}
     targetPort: {{ .Values.service.ports.validator }}
+    protocol: TCP
+  - name: vfn
+    port: {{ .Values.service.ports.vfn }}
+    targetPort: {{ .Values.service.ports.vfn }}
+    protocol: TCP
+  - name: api
+    port: {{ .Values.service.ports.api }}
+    targetPort: {{ .Values.service.ports.api }}
     protocol: TCP
 {{- else }}
   - name: api

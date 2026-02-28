@@ -18,6 +18,7 @@ spec:
         prometheus.io/scrape: {{ ternary "true" "false" .Values.monitoring.enabled | quote }}
         prometheus.io/port: {{ .Values.monitoring.metricsPort | quote }}
         prometheus.io/path: "/metrics"
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
       {{- if .Values.serviceAccount.create }}
       serviceAccountName: {{ .Values.serviceAccount.name | default (include "movement-node.fullname" .) }}

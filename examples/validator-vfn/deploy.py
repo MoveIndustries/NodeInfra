@@ -110,6 +110,14 @@ def build_terraform_vars(env_vars: dict) -> dict:
             t.strip() for t in env_vars["NODE_INSTANCE_TYPES"].split(",")
         ]
 
+    # Node root disk size (GB). Defaults to 100G if not specified.
+    # Parse values like "100Gi" or "100G".
+    disk_size_raw = env_vars.get("NODE_DISK_SIZE", "100")
+    if disk_size_raw:
+        digits = "".join(ch for ch in str(disk_size_raw).strip() if ch.isdigit())
+        if digits:
+            variables["node_disk_size"] = int(digits)
+
     # Node sizing based on topology
     deploy_vfn = env_vars.get("DEPLOY_VFN", "true").lower() in ("true", "1", "yes")
     deploy_fullnode = env_vars.get("DEPLOY_FULLNODE", "false").lower() in ("true", "1", "yes")
@@ -129,12 +137,44 @@ def build_terraform_vars(env_vars: dict) -> dict:
     return variables
 
 
+def normalize_storage_size(size: str) -> str:
+    """Normalize storage units for Kubernetes quantities.
+
+    Treat plain `G`/`g` suffix as `Gi` to avoid immutable PVC diffs like 2000Gi -> 2T.
+    """
+    raw = str(size).strip()
+    if raw.lower().endswith("gi") or raw.lower().endswith("ti"):
+        return raw
+    if raw.lower().endswith("g"):
+        return f"{raw[:-1]}Gi"
+    if raw.lower().endswith("t"):
+        return f"{raw[:-1]}Ti"
+    return raw
+
+
+def normalize_hex(value: str, *, with_0x: bool = False) -> str:
+    """Normalize hex strings for Helm values and network addresses."""
+    normalized = str(value).strip()
+    if normalized.lower().startswith("0x"):
+        normalized = normalized[2:]
+    return f"0x{normalized}" if with_0x else normalized
+
+
+def get_required_env(env_vars: dict, key: str) -> str:
+    """Fetch a required environment value and fail fast if missing."""
+    value = str(env_vars.get(key, "")).strip()
+    if not value:
+        raise ValueError(f"Missing required env var: {key}")
+    return value
+
+
 def deploy_node(
     helm,
     node_type: str,
     node_name: str,
     namespace: str,
     validator_name: str,
+    env_vars: dict,
     service_type: str | None = None,
     validator_service: str | None = None,
     vfn_service: str | None = None,
@@ -165,6 +205,30 @@ def deploy_node(
         "storage.parameters.tagSpecification_1": f"Validator={validator_name}",
     }
 
+    node_env_prefix = {
+        "validator": "VALIDATOR",
+        "vfn": "VFN",
+        "fullnode": "FULLNODE",
+    }[node_type]
+
+    # Per-node resource overrides from .env (fallbacks remain chart defaults)
+    resource_overrides = {
+        f"{node_env_prefix}_CPU_REQUEST": "resources.requests.cpu",
+        f"{node_env_prefix}_CPU_LIMIT": "resources.limits.cpu",
+        f"{node_env_prefix}_MEMORY_REQUEST": "resources.requests.memory",
+        f"{node_env_prefix}_MEMORY_LIMIT": "resources.limits.memory",
+    }
+    for env_key, helm_key in resource_overrides.items():
+        if env_key in env_vars and env_vars[env_key]:
+            set_values[helm_key] = str(env_vars[env_key])
+
+    # Per-node PVC size from .env, defaulting to 2000G if unset
+    pvc_size_key = f"{node_env_prefix}_STORAGE_SIZE"
+    if pvc_size_key in env_vars and env_vars[pvc_size_key]:
+        set_values["storage.size"] = normalize_storage_size(str(env_vars[pvc_size_key]))
+    else:
+        set_values["storage.size"] = "2000Gi"
+
     # Override service type if specified
     if service_type:
         set_values["service.type"] = service_type
@@ -174,20 +238,39 @@ def deploy_node(
     if node_type == "validator":
         if not validator_keys_secret:
             raise ValueError("validator_keys_secret required for validator deployment")
+        vfn_validator_peer_id = normalize_hex(get_required_env(env_vars, "VFN_VALIDATOR_PEER_ID"))
+        vfn_validator_pubkey = normalize_hex(get_required_env(env_vars, "VFN_VALIDATOR_PUBKEY"))
         set_values["validator.identity.existingSecret"] = validator_keys_secret
+        set_values["validator.vfn.peerId"] = vfn_validator_peer_id
+        set_values["validator.vfn.key"] = vfn_validator_pubkey
         set_values["genesis.enabled"] = "true"
 
     elif node_type == "vfn":
         if not validator_service:
             raise ValueError("validator_service required for VFN deployment")
+        vfn_validator_peer_id = normalize_hex(get_required_env(env_vars, "VFN_VALIDATOR_PEER_ID"))
+        vfn_validator_pubkey = normalize_hex(get_required_env(env_vars, "VFN_VALIDATOR_PUBKEY"))
+        vfn_fullnode_peer_id = normalize_hex(get_required_env(env_vars, "VFN_FULLNODE_PEER_ID"))
+        vfn_fullnode_pubkey = normalize_hex(get_required_env(env_vars, "VFN_FULLNODE_PUBKEY"))
         set_values["vfn.validator.serviceName"] = validator_service
         set_values["vfn.validator.namespace"] = namespace
+        set_values["vfn.validator.peerId"] = vfn_validator_peer_id
+        set_values["vfn.validator.publicKey"] = vfn_validator_pubkey
+        set_values["vfn.fullnode.peerId"] = vfn_fullnode_peer_id
+        set_values["vfn.fullnode.publicKey"] = vfn_fullnode_pubkey
         set_values["genesis.enabled"] = "true"
 
     elif node_type == "fullnode":
+        vfn_fullnode_peer_id = normalize_hex(get_required_env(env_vars, "VFN_FULLNODE_PEER_ID"))
+        vfn_fullnode_pubkey = normalize_hex(get_required_env(env_vars, "VFN_FULLNODE_PUBKEY"))
         if vfn_service:
             # Configure to sync from VFN in same cluster
             info(f"  Upstream: {vfn_service}")
+            set_values["fullnode.seeds[0].peerId"] = vfn_fullnode_peer_id
+            set_values["fullnode.seeds[0].addresses[0]"] = (
+                f"/dns/{vfn_service}.{namespace}.svc.cluster.local/tcp/6182/"
+                f"noise-ik/{vfn_fullnode_pubkey}/handshake/0"
+            )
         set_values["genesis.enabled"] = "true"
 
     # Deploy with Helm
@@ -197,6 +280,7 @@ def deploy_node(
         release_name=node_name,
         namespace=namespace,
         create_namespace=True,
+        reset_values=True,
         set_values=set_values,
         set_files={"config.inline": config_file} if config_file.exists() else None,
     )
@@ -308,6 +392,7 @@ def deploy(env_vars: dict, force_create: bool, validate: bool) -> None:
         node_name=validator_name,
         namespace=namespace,
         validator_name=validator_name,
+        env_vars=env_vars,
         service_type=validator_service_type,
         validator_keys_secret=validator_keys_secret,
     )
@@ -323,6 +408,7 @@ def deploy(env_vars: dict, force_create: bool, validate: bool) -> None:
             node_name=vfn_name,
             namespace=namespace,
             validator_name=validator_name,
+            env_vars=env_vars,
             service_type=vfn_service_type,
             validator_service=validator_name,
         )
@@ -335,6 +421,7 @@ def deploy(env_vars: dict, force_create: bool, validate: bool) -> None:
             node_name=fullnode_name,
             namespace=namespace,
             validator_name=validator_name,
+            env_vars=env_vars,
             service_type="LoadBalancer",
             vfn_service=vfn_name if deploy_vfn else None,
         )
