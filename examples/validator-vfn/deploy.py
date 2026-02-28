@@ -183,6 +183,17 @@ def deploy_node(
     """Deploy a single node with appropriate configuration."""
     info(f"Deploying {node_type}: {node_name}")
 
+    bootstrap_s3_enabled = env_vars.get("BOOTSTRAP_S3_ENABLED", "true").lower() in (
+        "true",
+        "1",
+        "yes",
+    )
+    bootstrap_s3_bucket = str(
+        env_vars.get("BOOTSTRAP_S3_BUCKET", "movement-2026-02-28-backup")
+    ).strip()
+    bootstrap_s3_prefix = str(env_vars.get("BOOTSTRAP_S3_PREFIX", "testnet/db")).strip().strip("/")
+    bootstrap_s3_region = str(env_vars.get("BOOTSTRAP_S3_REGION", "us-west-2")).strip()
+
     # Base configuration with S3 bootstrap for all nodes
     set_values = {
         "node.type": node_type,
@@ -194,11 +205,11 @@ def deploy_node(
         "storage.parameters.type": "gp3",
         "storage.parameters.iops": "6000",
         "storage.parameters.throughput": "500",
-        # Enable S3 bootstrap for all nodes
-        "bootstrap.enabled": "true",
-        "bootstrap.s3.bucket": "movement-2026-02-11-backup",
-        "bootstrap.s3.prefix": "testnet/db",
-        "bootstrap.s3.region": "us-west-2",
+        # S3 bootstrap can be overridden per validator via .env
+        "bootstrap.enabled": "true" if bootstrap_s3_enabled else "false",
+        "bootstrap.s3.bucket": bootstrap_s3_bucket,
+        "bootstrap.s3.prefix": bootstrap_s3_prefix,
+        "bootstrap.s3.region": bootstrap_s3_region,
         "service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-type": "nlb",
         "service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-scheme": "internet-facing",
         "service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-additional-resource-tags": f"Validator={validator_name}",
