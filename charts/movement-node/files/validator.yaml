@@ -4,6 +4,8 @@ base:
   waypoint:
     from_file: "/opt/data/genesis/waypoint.txt"
 
+randomness_override_seq_num: 999999999
+
 consensus:
   safety_rules:
     service:
