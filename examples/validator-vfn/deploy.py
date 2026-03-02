@@ -168,6 +168,17 @@ def get_required_env(env_vars: dict, key: str) -> str:
     return value
 
 
+def get_required_env_with_fallback(env_vars: dict, key: str, fallback_key: str) -> str:
+    """Fetch a required env var with a backward-compatible fallback key."""
+    value = str(env_vars.get(key, "")).strip()
+    if value:
+        return value
+    fallback = str(env_vars.get(fallback_key, "")).strip()
+    if fallback:
+        return fallback
+    raise ValueError(f"Missing required env var: {key} (or fallback {fallback_key})")
+
+
 def deploy_node(
     helm,
     node_type: str,
@@ -250,10 +261,16 @@ def deploy_node(
         if not validator_keys_secret:
             raise ValueError("validator_keys_secret required for validator deployment")
         vfn_validator_peer_id = normalize_hex(get_required_env(env_vars, "VFN_VALIDATOR_PEER_ID"))
-        vfn_validator_pubkey = normalize_hex(get_required_env(env_vars, "VFN_VALIDATOR_PUBKEY"))
+        # Validator fullnode-network identity key must be x25519 private key.
+        # Backward compatibility: fall back to legacy VFN_VALIDATOR_PUBKEY variable.
+        vfn_validator_private_key = normalize_hex(
+            get_required_env_with_fallback(
+                env_vars, "VFN_VALIDATOR_PRIVATE_KEY", "VFN_VALIDATOR_PUBKEY"
+            )
+        )
         set_values["validator.identity.existingSecret"] = validator_keys_secret
         set_values["validator.vfn.peerId"] = vfn_validator_peer_id
-        set_values["validator.vfn.key"] = vfn_validator_pubkey
+        set_values["validator.vfn.key"] = vfn_validator_private_key
         set_values["genesis.enabled"] = "true"
 
     elif node_type == "vfn":
@@ -262,13 +279,19 @@ def deploy_node(
         vfn_validator_peer_id = normalize_hex(get_required_env(env_vars, "VFN_VALIDATOR_PEER_ID"))
         vfn_validator_pubkey = normalize_hex(get_required_env(env_vars, "VFN_VALIDATOR_PUBKEY"))
         vfn_fullnode_peer_id = normalize_hex(get_required_env(env_vars, "VFN_FULLNODE_PEER_ID"))
-        vfn_fullnode_pubkey = normalize_hex(get_required_env(env_vars, "VFN_FULLNODE_PUBKEY"))
+        # VFN public-network identity key must be x25519 private key.
+        # Backward compatibility: fall back to legacy VFN_FULLNODE_PUBKEY variable.
+        vfn_fullnode_private_key = normalize_hex(
+            get_required_env_with_fallback(
+                env_vars, "VFN_FULLNODE_PRIVATE_KEY", "VFN_FULLNODE_PUBKEY"
+            )
+        )
         set_values["vfn.validator.serviceName"] = validator_service
         set_values["vfn.validator.namespace"] = namespace
         set_values["vfn.validator.peerId"] = vfn_validator_peer_id
         set_values["vfn.validator.publicKey"] = vfn_validator_pubkey
         set_values["vfn.fullnode.peerId"] = vfn_fullnode_peer_id
-        set_values["vfn.fullnode.publicKey"] = vfn_fullnode_pubkey
+        set_values["vfn.fullnode.publicKey"] = vfn_fullnode_private_key
         set_values["genesis.enabled"] = "true"
 
     elif node_type == "fullnode":
