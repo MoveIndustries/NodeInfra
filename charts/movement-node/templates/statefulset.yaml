@@ -50,12 +50,22 @@ spec:
           args:
             - |
               set -euo pipefail
+              MARKER_FILE="/opt/data/.RESTORE_DONE"
+              # Idempotent: skip if restore was already completed
+              if [ -f "${MARKER_FILE}" ]; then
+                echo "Marker file ${MARKER_FILE} exists, skipping S3 restore"
+                exit 0
+              fi
+              echo "No marker file found, restoring from S3..."
               mkdir -p /opt/data/db
               S3_URI="s3://{{ .Values.bootstrap.s3.bucket }}/{{ .Values.bootstrap.s3.prefix }}"
               if ! aws s3 sync "${S3_URI}" "/opt/data/db" --no-progress; then
                 echo "Signed S3 sync failed; retrying with --no-sign-request" >&2
                 aws s3 sync "${S3_URI}" "/opt/data/db" --no-sign-request --no-progress
               fi
+              # Create marker file after successful restore
+              echo "Restore completed at $(date -u +%Y-%m-%dT%H:%M:%SZ)" > "${MARKER_FILE}"
+              echo "Created marker file ${MARKER_FILE}"
           env:
             - name: HOME
               value: "/tmp"
