@@ -141,6 +141,17 @@ resource "aws_security_group_rule" "lb_ingress_p2p" {
   security_group_id = aws_security_group.load_balancer.id
 }
 
+# Allow Aptos validator network port
+resource "aws_security_group_rule" "lb_ingress_validator" {
+  description       = "Allow Aptos validator network traffic"
+  type              = "ingress"
+  from_port         = 6180
+  to_port           = 6180
+  protocol          = "tcp"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.load_balancer.id
+}
+
 # Allow all egress from load balancer
 resource "aws_security_group_rule" "lb_egress" {
   description       = "Allow load balancer egress"
