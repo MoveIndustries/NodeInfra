@@ -52,3 +52,23 @@ spec:
     protocol: TCP
 {{- end }}
   sessionAffinity: None
+{{- if eq .Values.node.type "validator" }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "movement-node.fullname" . }}-public
+  labels:
+    {{- include "movement-node.labels" . | nindent 4 }}
+  annotations:
+    {{- toYaml .Values.loadBalancer.annotations | nindent 4 }}
+spec:
+  type: LoadBalancer
+  selector:
+    {{- include "movement-node.selectorLabels" . | nindent 4 }}
+  ports:
+  - name: validator
+    port: {{ .Values.service.ports.validator }}
+    targetPort: {{ .Values.service.ports.validator }}
+    protocol: TCP
+{{- end }}
