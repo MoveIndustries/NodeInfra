@@ -1,0 +1,43 @@
+base:
+  role: "full_node"
+  data_dir: "/opt/data"
+  waypoint:
+    from_file: "/opt/data/genesis/waypoint.txt"
+
+execution:
+  genesis_file_location: "/opt/data/genesis/genesis.blob"
+  genesis_waypoint:
+    from_file: "/opt/data/genesis/genesis_waypoint.txt"
+
+storage:
+  rocksdb_configs:
+    enable_storage_sharding: false
+  storage_pruner_config:
+    ledger_pruner_config:
+      enable: false
+  enable_indexer: true
+
+indexer_table_info:
+  table_info_service_mode: IndexingOnly
+
+full_node_networks:
+  - network_id: "public"
+    discovery_method: "onchain"
+    listen_address: "/ip4/0.0.0.0/tcp/6182"
+
+api:
+  enabled: true
+  address: 0.0.0.0:8080
+
+indexer_grpc:
+  enabled: true
+  processor_batch_size: 1000
+  processor_task_count: 10
+  output_batch_size: 1000
+  address: 0.0.0.0:30734
+  use_data_service_interface: true
+
+state_sync:
+  state_sync_driver:
+    bootstrapping_mode: ApplyTransactionOutputsFromGenesis
+    continuous_syncing_mode: ApplyTransactionOutputs
