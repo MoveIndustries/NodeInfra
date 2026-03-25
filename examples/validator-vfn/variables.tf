@@ -64,6 +64,12 @@ variable "node_max_size" {
   default     = 4
 }
 
+variable "node_disk_size" {
+  description = "Disk size in GB for nodes"
+  type        = number
+  default     = 100
+}
+
 variable "namespace" {
   description = "Kubernetes namespace"
   type        = string
