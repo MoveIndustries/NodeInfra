@@ -25,6 +25,12 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT_DIR = SCRIPT_DIR.parents[1]
 CHART_DIR = ROOT_DIR / "charts" / "movement-node"
 
+# Default VFN connection keys (validator's fullnode-network identity)
+# These are used for the internal V ↔ VFN private connection
+DEFAULT_VFN_VALIDATOR_PEER_ID = "00000000000000000000000000000000e69cd8cc265c49039cd0087df05e2348"
+DEFAULT_VFN_VALIDATOR_PRIVATE_KEY = "a1e405b4f75426774d43b3bf2e71424600f35de68fb9f9d7cc3e68bb88e1bf80"
+DEFAULT_VFN_VALIDATOR_PUBKEY = "f79b64e7812ce3c903727ba19938cf18731dfa3a3262456be704cd592d5a4f46"
+
 
 def create_validator_secret_from_aws_sm(
     namespace: str,
@@ -82,6 +88,63 @@ def create_validator_secret_from_aws_sm(
 
     except Exception as e:
         error(f"Failed to create secret from AWS Secrets Manager: {e}")
+        raise
+
+
+def create_identity_secret_from_local_file(
+    namespace: str,
+    secret_name: str,
+    local_file_path: Path,
+    secret_key: str,
+) -> bool:
+    """Create Kubernetes secret from a local identity file.
+
+    Args:
+        namespace: Kubernetes namespace
+        secret_name: Name for the Kubernetes secret
+        local_file_path: Path to the local identity file
+        secret_key: Key name in the secret (e.g., 'validator-identity.yaml')
+
+    Returns:
+        True if secret was created or already exists, False if local file not found
+    """
+    try:
+        from kubernetes import client, config
+
+        # Connect to Kubernetes
+        config.load_kube_config()
+        v1 = client.CoreV1Api()
+
+        # Check if secret already exists
+        try:
+            v1.read_namespaced_secret(secret_name, namespace)
+            info(f"  Secret '{secret_name}' already exists in namespace '{namespace}'")
+            return True
+        except client.exceptions.ApiException as e:
+            if e.status != 404:
+                raise
+
+        # Check if local file exists
+        if not local_file_path.exists():
+            info(f"  Local file not found: {local_file_path}")
+            return False
+
+        info(f"Reading identity from local file: {local_file_path}")
+        secret_data = local_file_path.read_text()
+
+        # Create Kubernetes secret using string_data (no base64 encoding needed)
+        k8s_secret = client.V1Secret(
+            metadata=client.V1ObjectMeta(name=secret_name),
+            string_data={secret_key: secret_data},
+            type="Opaque",
+        )
+
+        v1.create_namespaced_secret(namespace, k8s_secret)
+        success(f"✅ Created Kubernetes secret '{secret_name}' from local file")
+        return True
+
+    except Exception as e:
+        error(f"Failed to create secret from local file: {e}")
         raise
 
 
@@ -190,6 +253,7 @@ def deploy_node(
     validator_service: str | None = None,
     vfn_service: str | None = None,
     validator_keys_secret: str | None = None,
+    vfn_keys_secret: str | None = None,
 ) -> None:
     """Deploy a single node with appropriate configuration."""
     info(f"Deploying {node_type}: {node_name}")
@@ -268,38 +332,37 @@ def deploy_node(
     if node_type == "validator":
         if not validator_keys_secret:
             raise ValueError("validator_keys_secret required for validator deployment")
-        vfn_validator_peer_id = normalize_hex(get_required_env(env_vars, "VFN_VALIDATOR_PEER_ID"))
-        # Validator fullnode-network identity key must be x25519 private key.
-        # Backward compatibility: fall back to legacy VFN_VALIDATOR_PUBKEY variable.
+        # VFN connection keys (optional, use defaults if not provided)
+        vfn_validator_peer_id = normalize_hex(
+            env_vars.get("VFN_VALIDATOR_PEER_ID", DEFAULT_VFN_VALIDATOR_PEER_ID)
+        )
         vfn_validator_private_key = normalize_hex(
-            get_required_env_with_fallback(
-                env_vars, "VFN_VALIDATOR_PRIVATE_KEY", "VFN_VALIDATOR_PUBKEY"
-            )
+            env_vars.get("VFN_VALIDATOR_PRIVATE_KEY")
+            or env_vars.get("VFN_VALIDATOR_PUBKEY")
+            or DEFAULT_VFN_VALIDATOR_PRIVATE_KEY
         )
         set_values["validator.identity.existingSecret"] = validator_keys_secret
-        set_values["validator.vfn.peerId"] = vfn_validator_peer_id
-        set_values["validator.vfn.key"] = vfn_validator_private_key
+        set_values["validator.vfn.vfnPeerId"] = vfn_validator_peer_id
+        set_values["validator.vfn.vfnPrivateKey"] = vfn_validator_private_key
         set_values["genesis.enabled"] = "true"
 
     elif node_type == "vfn":
         if not validator_service:
             raise ValueError("validator_service required for VFN deployment")
-        vfn_validator_peer_id = normalize_hex(get_required_env(env_vars, "VFN_VALIDATOR_PEER_ID"))
-        vfn_validator_pubkey = normalize_hex(get_required_env(env_vars, "VFN_VALIDATOR_PUBKEY"))
-        vfn_fullnode_peer_id = normalize_hex(get_required_env(env_vars, "VFN_FULLNODE_PEER_ID"))
-        # VFN public-network identity key must be x25519 private key.
-        # Backward compatibility: fall back to legacy VFN_FULLNODE_PUBKEY variable.
-        vfn_fullnode_private_key = normalize_hex(
-            get_required_env_with_fallback(
-                env_vars, "VFN_FULLNODE_PRIVATE_KEY", "VFN_FULLNODE_PUBKEY"
-            )
+        if not vfn_keys_secret:
+            raise ValueError("vfn_keys_secret required for VFN deployment")
+        # VFN connection keys (optional, use defaults if not provided)
+        vfn_validator_peer_id = normalize_hex(
+            env_vars.get("VFN_VALIDATOR_PEER_ID", DEFAULT_VFN_VALIDATOR_PEER_ID)
         )
+        vfn_validator_pubkey = normalize_hex(
+            env_vars.get("VFN_VALIDATOR_PUBKEY", DEFAULT_VFN_VALIDATOR_PUBKEY)
+        )
+        set_values["vfn.identity.existingSecret"] = vfn_keys_secret
         set_values["vfn.validator.serviceName"] = validator_service
         set_values["vfn.validator.namespace"] = namespace
-        set_values["vfn.validator.peerId"] = vfn_validator_peer_id
-        set_values["vfn.validator.publicKey"] = vfn_validator_pubkey
-        set_values["vfn.fullnode.peerId"] = vfn_fullnode_peer_id
-        set_values["vfn.fullnode.publicKey"] = vfn_fullnode_private_key
+        set_values["vfn.validator.vfnPeerId"] = vfn_validator_peer_id
+        set_values["vfn.validator.vfnNetworkPublicKey"] = vfn_validator_pubkey
         set_values["genesis.enabled"] = "true"
 
     elif node_type == "fullnode":
@@ -344,6 +407,7 @@ def deploy(env_vars: dict, force_create: bool, validate: bool) -> None:
     fullnode_name = env_vars.get("FULLNODE_NAME", "fullnode-01")
     namespace = env_vars.get("NAMESPACE", "movement-l1")
     validator_keys_secret = env_vars.get("VALIDATOR_KEYS_SECRET", "validator-identity")
+    vfn_keys_secret = env_vars.get("VFN_KEYS_SECRET", "vfn-identity")
 
     # Display deployment plan
     info("Deployment Topology:")
@@ -406,21 +470,35 @@ def deploy(env_vars: dict, force_create: bool, validate: bool) -> None:
     eks.wait_until_active()
     eks.update_kubeconfig()
 
-    # Step 1.5: Create validator secret from AWS Secrets Manager (if configured)
-    aws_secret_name = env_vars.get("VALIDATOR_KEYS_SECRET_NAME", "")
-    if aws_secret_name:
-        info("\n" + "=" * 80)
-        info("Creating Kubernetes Secret from AWS Secrets Manager")
-        info("=" * 80)
-        create_validator_secret_from_aws_sm(
+    # Step 1.5: Create identity secrets from local files
+    info("\n" + "=" * 80)
+    info("Creating Kubernetes Identity Secrets")
+    info("=" * 80)
+
+    # Validator identity secret
+    validator_identity_file = env_vars.get("VALIDATOR_IDENTITY_FILE", "")
+    if validator_identity_file:
+        create_identity_secret_from_local_file(
             namespace=namespace,
             secret_name=validator_keys_secret,
-            aws_secret_name=aws_secret_name,
-            region=region,
-            profile=profile,
+            local_file_path=Path(validator_identity_file),
+            secret_key="validator-identity.yaml",
         )
     else:
-        info(f"Skipping AWS Secrets Manager (using existing K8s secret: {validator_keys_secret})")
+        info(f"  No VALIDATOR_IDENTITY_FILE set (using existing K8s secret: {validator_keys_secret})")
+
+    # VFN identity secret (only if deploying VFN)
+    if deploy_vfn:
+        vfn_identity_file = env_vars.get("VFN_IDENTITY_FILE", "")
+        if vfn_identity_file:
+            create_identity_secret_from_local_file(
+                namespace=namespace,
+                secret_name=vfn_keys_secret,
+                local_file_path=Path(vfn_identity_file),
+                secret_key="validator-full-node-identity.yaml",
+            )
+        else:
+            info(f"  No VFN_IDENTITY_FILE set (using existing K8s secret: {vfn_keys_secret})")
 
     # Step 2: Deploy nodes in order
     from tools.helm import HelmManager
@@ -453,6 +531,7 @@ def deploy(env_vars: dict, force_create: bool, validate: bool) -> None:
             env_vars=env_vars,
             service_type=vfn_service_type,
             validator_service=validator_name,
+            vfn_keys_secret=vfn_keys_secret,
         )
 
     # Deploy fullnode if requested

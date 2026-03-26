@@ -112,6 +112,12 @@ spec:
               subPath: validator-identity.yaml
               readOnly: true
             {{- end }}
+            {{- if eq .Values.node.type "vfn" }}
+            - name: vfn-identity
+              mountPath: /opt/data/genesis/validator-full-node-identity.yaml
+              subPath: validator-full-node-identity.yaml
+              readOnly: true
+            {{- end }}
       volumes:
         - name: config
           configMap:
@@ -123,6 +129,14 @@ spec:
             items:
               - key: validator-identity.yaml
                 path: validator-identity.yaml
+        {{- end }}
+        {{- if eq .Values.node.type "vfn" }}
+        - name: vfn-identity
+          secret:
+            secretName: {{ .Values.vfn.identity.existingSecret }}
+            items:
+              - key: validator-full-node-identity.yaml
+                path: validator-full-node-identity.yaml
         {{- end }}
   volumeClaimTemplates:
     - metadata:

@@ -44,8 +44,8 @@ full_node_networks:
   listen_address: "/ip4/0.0.0.0/tcp/6181"
   identity:
     type: "from_config"
-    key: "{{ .Values.validator.vfn.key }}"
-    peer_id: "{{ .Values.validator.vfn.peerId }}"
+    key: "{{ .Values.validator.vfn.vfnPrivateKey }}"
+    peer_id: "{{ .Values.validator.vfn.vfnPeerId }}"
 
 api:
   enabled: true

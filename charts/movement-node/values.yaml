@@ -46,26 +46,22 @@ validator:
   vfn:
     enabled: true
     # Set per node via deploy overrides (do not hardcode testnet constants here)
-    key: ""
-    peerId: ""
+    vfnPeerId: ""
+    vfnPrivateKey: ""
 
 # VFN-specific configuration (only used when node.type=vfn)
 vfn:
+  # Identity configuration (loaded from file)
+  identity:
+    existingSecret: "vfn-identity"
+
   # Upstream validator connection
   validator:
     serviceName: "validator"
     namespace: "movement-l1"
-    # Set per node via deploy overrides (do not hardcode testnet constants here)
-    peerId: ""
-    publicKey: ""
     port: 6181
-
-  # Public fullnode network identity
-  fullnode:
-    enabled: true
-    # Set per node via deploy overrides (do not hardcode testnet constants here)
-    publicKey: ""
-    peerId: ""
+    vfnPeerId: ""
+    vfnNetworkPublicKey: ""
 
 # Fullnode-specific configuration (only used when node.type=fullnode)
 fullnode:
