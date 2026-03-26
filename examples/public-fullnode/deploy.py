@@ -80,10 +80,18 @@ def build_helm_config(env_vars: dict, outputs: dict) -> dict:
         "public_fullnode_service_name", env_vars.get("FULLNODE_SERVICE_NAME", "public-fullnode")
     )
 
+    # Docker image configuration (defaults match values.yaml)
+    docker_image_repo = env_vars.get(
+        "DOCKER_IMAGE_REPOSITORY", "ghcr.io/movementlabsxyz/aptos-node"
+    ).strip()
+    docker_image_tag = env_vars.get("DOCKER_IMAGE_TAG", "latest").strip()
+
     # Base Helm values for movement-node chart
     set_values = {
         "node.type": "fullnode",
         "node.name": service_name,
+        "image.repository": docker_image_repo,
+        "image.tag": docker_image_tag,
         "network.name": env_vars.get("NETWORK_NAME", "testnet"),
         "network.chainId": env_vars.get("CHAIN_ID", "250"),
         "storage.create": "true",
