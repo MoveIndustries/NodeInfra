@@ -23,16 +23,15 @@ full_node_networks:
     private: "vfn"
   listen_address: "/ip4/0.0.0.0/tcp/6181"
   seeds:
-    {{ .Values.vfn.validator.peerId }}:
+    {{ .Values.vfn.validator.vfnPeerId }}:
       addresses:
-      - "/dns/{{ .Values.vfn.validator.serviceName }}.{{ .Values.vfn.validator.namespace }}.svc.cluster.local/tcp/{{ .Values.vfn.validator.port }}/noise-ik/{{ .Values.vfn.validator.publicKey }}/handshake/0"
+      - "/dns/{{ .Values.vfn.validator.serviceName }}.{{ .Values.vfn.validator.namespace }}.svc.cluster.local/tcp/{{ .Values.vfn.validator.port }}/noise-ik/{{ .Values.vfn.validator.vfnNetworkPublicKey }}/handshake/0"
       role: "Validator"
 - network_id: "public"
   listen_address: "/ip4/0.0.0.0/tcp/6182"
   identity:
-    type: "from_config"
-    key: "{{ .Values.vfn.fullnode.publicKey }}"
-    peer_id: "{{ .Values.vfn.fullnode.peerId }}"
+    type: "from_file"
+    path: /opt/data/genesis/validator-full-node-identity.yaml
 
 admin_service:
   enabled: true
