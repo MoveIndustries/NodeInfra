@@ -393,9 +393,10 @@ def deploy_node(
     success(f"{node_type.upper()} '{node_name}' deployed successfully")
 
 
-def deploy(env_vars: dict, force_create: bool, validate: bool) -> None:
+def deploy(env_vars: dict, force_create: bool, validate: bool, terraform_dir: Path | None = None) -> None:
     """Deploy validator cluster with intelligent topology handling."""
-    cluster = ClusterManager(SCRIPT_DIR, CHART_DIR, ROOT_DIR)
+    tf_dir = terraform_dir or SCRIPT_DIR
+    cluster = ClusterManager(tf_dir, CHART_DIR, ROOT_DIR)
 
     # Get topology configuration
     deploy_vfn = env_vars.get("DEPLOY_VFN", "true").lower() in ("true", "1", "yes")
@@ -612,9 +613,10 @@ def deploy(env_vars: dict, force_create: bool, validate: bool) -> None:
     return True
 
 
-def destroy(env_vars: dict) -> None:
+def destroy(env_vars: dict, terraform_dir: Path | None = None) -> None:
     """Destroy all deployed resources."""
-    cluster = ClusterManager(SCRIPT_DIR, CHART_DIR, ROOT_DIR)
+    tf_dir = terraform_dir or SCRIPT_DIR
+    cluster = ClusterManager(tf_dir, CHART_DIR, ROOT_DIR)
     helm = HelmManager(CHART_DIR)
 
     namespace = env_vars.get("NAMESPACE", "movement-l1")
