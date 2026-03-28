@@ -178,6 +178,85 @@ def wait_for_loadbalancer_and_api(
     return ""  # Unreachable, but satisfies type checker
 
 
+def wait_for_ingress_and_api(
+    ingress_hostname: str,
+    api_path: str = "/v1",
+    retries: int = 60,
+    interval: int = 10,
+) -> str:
+    """
+    Wait for Ingress endpoint to be healthy (HTTPS).
+
+    Args:
+        ingress_hostname: Full hostname (e.g., vfn-01.testnet.scratchpad.movementnetwork.xyz)
+        api_path: API path to check (default: /v1)
+        retries: Number of retries
+        interval: Interval between retries in seconds
+
+    Returns:
+        Ingress hostname on success
+
+    Raises:
+        SystemExit: If timeout or API fails health check
+    """
+    import ssl
+    import urllib.request
+
+    info(f"Waiting for Ingress endpoint to be healthy: https://{ingress_hostname}")
+    info("Note: DNS propagation and TLS cert issuance may take 2-10 minutes on first deploy")
+
+    # Create SSL context that verifies certificates
+    ssl_context = ssl.create_default_context()
+    last_error = ""
+
+    for attempt in range(1, retries + 1):
+        url = f"https://{ingress_hostname}{api_path}"
+        try:
+            req = urllib.request.Request(url, headers={"Host": ingress_hostname})
+            with urllib.request.urlopen(req, timeout=10, context=ssl_context) as resp:
+                body = resp.read().decode("utf-8", errors="replace")
+                if resp.status == 200:
+                    payload = json.loads(body)
+                    ledger_version = str(payload.get("ledger_version", ""))
+                    if ledger_version.isdigit():
+                        info(f"✅ Ingress API healthy at {ingress_hostname} (ledger_version={ledger_version})")
+                        return ingress_hostname
+        except urllib.error.HTTPError as e:
+            last_error = f"HTTP {e.code}"
+            warn(f"Ingress reachable, API HTTP {e.code}, retry {attempt}/{retries}")
+        except ssl.SSLError as e:
+            last_error = f"TLS: {e}"
+            warn(f"TLS not ready ({e}), retry {attempt}/{retries}")
+        except urllib.error.URLError as e:
+            last_error = f"Connection: {e.reason}"
+            if "Name or service not known" in str(e.reason):
+                warn(f"DNS not propagated yet, retry {attempt}/{retries}")
+            else:
+                warn(f"Connection failed ({e.reason}), retry {attempt}/{retries}")
+        except Exception as e:
+            last_error = str(e)
+            warn(f"Ingress/API not ready ({str(e)}), retry {attempt}/{retries}")
+
+        time.sleep(interval)
+
+    # Provide actionable guidance on timeout
+    warn("\n" + "=" * 70)
+    warn(f"Timeout waiting for ingress endpoint: https://{ingress_hostname}")
+    warn(f"Last error: {last_error}")
+    warn("\nPossible causes:")
+    warn("  - DNS record not yet propagated (wait 2-5 minutes, then retry)")
+    warn("  - TLS certificate not yet issued (check: kubectl get certificate -A)")
+    warn("  - Ingress controller not ready (check: kubectl get pods -n ingress-nginx)")
+    warn("  - Pod not ready (check: kubectl get pods -n <namespace>)")
+    warn("\nTo debug:")
+    warn(f"  kubectl get ingress -A")
+    warn(f"  kubectl describe certificate wildcard-tls -n ingress-nginx")
+    warn(f"  nslookup {ingress_hostname}")
+    warn("=" * 70 + "\n")
+    fail("Ingress validation failed - see guidance above")
+    return ""  # Unreachable, but satisfies type checker
+
+
 def validate_deployment(
     namespace: str,
     service_name: str,
@@ -186,6 +265,8 @@ def validate_deployment(
     interval: int = 10,
     validate_api: bool = True,
     kubeconfig_path: Path | None = None,
+    ingress_enabled: bool = False,
+    ingress_hostname: str | None = None,
 ) -> None:
     """
     Validate that a deployment is healthy.
@@ -198,6 +279,8 @@ def validate_deployment(
         interval: Check interval in seconds
         validate_api: Whether to validate LoadBalancer and API health (default: True)
         kubeconfig_path: Optional path to kubeconfig
+        ingress_enabled: Whether ingress mode is used (skips LB check, uses HTTPS)
+        ingress_hostname: Full ingress hostname for API check (required if ingress_enabled)
 
     Raises:
         SystemExit: If validation fails
@@ -213,15 +296,24 @@ def validate_deployment(
         kubeconfig_path=kubeconfig_path,
     )
 
-    # Optionally wait for LoadBalancer and API health
+    # Validate API endpoint
     if validate_api:
-        wait_for_loadbalancer_and_api(
-            namespace=namespace,
-            service_name=service_name,
-            retries=lb_retries,
-            interval=interval,
-            kubeconfig_path=kubeconfig_path,
-        )
+        if ingress_enabled:
+            if not ingress_hostname:
+                fail("ingress_hostname required when ingress_enabled=True")
+            wait_for_ingress_and_api(
+                ingress_hostname=ingress_hostname,
+                retries=lb_retries,
+                interval=interval,
+            )
+        else:
+            wait_for_loadbalancer_and_api(
+                namespace=namespace,
+                service_name=service_name,
+                retries=lb_retries,
+                interval=interval,
+                kubeconfig_path=kubeconfig_path,
+            )
 
     info("✅ Deployment validation passed")
 

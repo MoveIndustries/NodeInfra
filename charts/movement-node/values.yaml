@@ -104,11 +104,30 @@ service:
 
 # Load balancer configuration (for vfn and fullnode)
 loadBalancer:
-  # Auto-enabled for vfn and fullnode
+  # Auto-enabled for vfn and fullnode (when ingress is disabled)
   enabled: false  # Leave false for auto-config
   annotations:
     service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
     service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+
+# Ingress configuration (for HTTPS access to API)
+ingress:
+  # Enable ingress for TLS termination (recommended for production)
+  enabled: false
+  # Ingress class name (nginx, traefik, etc.)
+  className: "nginx"
+  # Hostname for this node (e.g., node-01.nodeinfra.testnet.movementnetwork.xyz)
+  hostname: ""
+  # Additional ingress annotations
+  annotations: {}
+  # TLS configuration
+  tls:
+    enabled: true
+    # Use a shared wildcard certificate secret (recommended)
+    # This secret is created by cert-manager and synced by reflector
+    wildcardSecretName: "wildcard-tls"
+    # Or use a per-node certificate secret
+    secretName: ""
 
 # Monitoring configuration
 monitoring:

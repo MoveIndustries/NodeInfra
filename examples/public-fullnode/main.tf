@@ -3,6 +3,66 @@ provider "aws" {
   region = var.region
 }
 
+# Kubernetes provider (configured after EKS is created)
+provider "kubernetes" {
+  host                   = module.eks.cluster_endpoint
+  cluster_ca_certificate = base64decode(module.eks.cluster_ca_certificate)
+
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    command     = "aws"
+    args = [
+      "eks",
+      "get-token",
+      "--cluster-name",
+      module.eks.cluster_id,
+      "--region",
+      var.region
+    ]
+  }
+}
+
+# Helm provider
+provider "helm" {
+  kubernetes {
+    host                   = module.eks.cluster_endpoint
+    cluster_ca_certificate = base64decode(module.eks.cluster_ca_certificate)
+
+    exec {
+      api_version = "client.authentication.k8s.io/v1beta1"
+      command     = "aws"
+      args = [
+        "eks",
+        "get-token",
+        "--cluster-name",
+        module.eks.cluster_id,
+        "--region",
+        var.region
+      ]
+    }
+  }
+}
+
+# kubectl provider
+provider "kubectl" {
+  host                   = module.eks.cluster_endpoint
+  cluster_ca_certificate = base64decode(module.eks.cluster_ca_certificate)
+  load_config_file       = false
+
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    command     = "aws"
+    args = [
+      "eks",
+      "get-token",
+      "--cluster-name",
+      module.eks.cluster_id,
+      "--region",
+      var.region
+    ]
+  }
+}
+
 locals {
   fullnode_bootstrap_enabled    = var.fullnode_bootstrap_s3_bucket != ""
   fullnode_bootstrap_prefix     = trim(var.fullnode_bootstrap_s3_prefix, "/")
@@ -19,8 +79,8 @@ module "network" {
   validator_name = var.validator_name
   region         = var.region
   vpc_cidr       = var.vpc_cidr
-  dns_enabled    = var.enable_dns
-  dns_zone_name  = var.dns_zone_name
+  dns_enabled    = var.enable_dns || var.enable_ingress
+  dns_zone_name  = var.enable_dns ? var.dns_zone_name : (var.enable_ingress ? var.ingress_domain : "")
 
   # Cost optimization: single NAT gateway for demo
   single_nat_gateway = true
@@ -106,4 +166,22 @@ resource "aws_iam_role_policy" "fullnode_s3_read" {
 
   role   = aws_iam_role.fullnode_s3[0].id
   policy = data.aws_iam_policy_document.fullnode_s3_read[0].json
+}
+
+# Ingress infrastructure (NGINX Ingress Controller + cert-manager + wildcard TLS)
+module "ingress" {
+  source = "../../terraform-modules/movement-ingress"
+  count  = var.enable_ingress ? 1 : 0
+
+  cluster_name              = module.eks.cluster_name
+  cluster_oidc_issuer_url   = "https://${module.eks.oidc_provider_url}"
+  cluster_oidc_provider_arn = module.eks.oidc_provider_arn
+  route53_zone_id           = module.network.dns_zone_id
+  route53_zone_name         = var.ingress_domain
+  wildcard_domain           = "*.${var.chain_name}.${var.ingress_domain}"
+  node_namespace            = var.fullnode_namespace
+
+  tags = var.tags
+
+  depends_on = [module.eks]
 }

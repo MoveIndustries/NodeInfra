@@ -16,7 +16,8 @@ module "network" {
   validator_name = var.validator_name
   region         = var.region
   vpc_cidr       = var.vpc_cidr
-  dns_zone_name  = var.enable_dns ? var.dns_zone_name : ""
+  dns_enabled    = var.enable_dns || var.enable_ingress
+  dns_zone_name  = var.enable_dns || var.enable_ingress ? var.ingress_domain : ""
 
   tags = merge(
     var.tags,
@@ -63,6 +64,47 @@ provider "kubernetes" {
   }
 }
 
+# Configure Helm provider
+provider "helm" {
+  kubernetes {
+    host                   = module.eks.cluster_endpoint
+    cluster_ca_certificate = base64decode(module.eks.cluster_ca_certificate)
+
+    exec {
+      api_version = "client.authentication.k8s.io/v1beta1"
+      command     = "aws"
+      args = [
+        "eks",
+        "get-token",
+        "--cluster-name",
+        module.eks.cluster_id,
+        "--region",
+        var.region
+      ]
+    }
+  }
+}
+
+# Configure kubectl provider
+provider "kubectl" {
+  host                   = module.eks.cluster_endpoint
+  cluster_ca_certificate = base64decode(module.eks.cluster_ca_certificate)
+  load_config_file       = false
+
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    command     = "aws"
+    args = [
+      "eks",
+      "get-token",
+      "--cluster-name",
+      module.eks.cluster_id,
+      "--region",
+      var.region
+    ]
+  }
+}
+
 # Create namespace for validator nodes
 resource "kubernetes_namespace" "movement" {
   metadata {
@@ -72,4 +114,22 @@ resource "kubernetes_namespace" "movement" {
       name = var.namespace
     }
   }
+}
+
+# Ingress infrastructure (NGINX Ingress Controller + cert-manager + wildcard TLS)
+module "ingress" {
+  source = "../../terraform-modules/movement-ingress"
+  count  = var.enable_ingress ? 1 : 0
+
+  cluster_name              = module.eks.cluster_name
+  cluster_oidc_issuer_url   = "https://${module.eks.oidc_provider_url}"
+  cluster_oidc_provider_arn = module.eks.oidc_provider_arn
+  route53_zone_id           = module.network.dns_zone_id
+  route53_zone_name         = var.ingress_domain
+  wildcard_domain           = "*.${var.chain_name}.${var.ingress_domain}"
+  node_namespace            = var.namespace
+
+  tags = var.tags
+
+  depends_on = [module.eks, kubernetes_namespace.movement]
 }

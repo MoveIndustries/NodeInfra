@@ -59,6 +59,13 @@ def build_terraform_vars(env_vars: dict) -> dict:
             t.strip() for t in env_vars["NODE_INSTANCE_TYPES"].split(",")
         ]
 
+    # Ingress configuration
+    enable_ingress = env_vars.get("INGRESS_ENABLED", "false").lower() in ("true", "1", "yes")
+    variables["enable_ingress"] = enable_ingress
+    if enable_ingress:
+        variables["chain_name"] = env_vars.get("CHAIN_NAME", "testnet")
+        variables["ingress_domain"] = env_vars.get("INGRESS_DOMAIN", "scratchpad.movementnetwork.xyz")
+
     return variables
 
 
@@ -100,6 +107,26 @@ def build_helm_config(env_vars: dict, outputs: dict) -> dict:
         "storage.parameters.iops": "6000",
         "storage.parameters.throughput": "500",
     }
+
+    # Ingress configuration for TLS (check outputs first, then env vars)
+    ingress_enabled = outputs.get("ingress_enabled", False)
+    if not ingress_enabled:
+        ingress_enabled = env_vars.get("INGRESS_ENABLED", "false").lower() in ("true", "1", "yes")
+    chain_name = env_vars.get("CHAIN_NAME", "testnet")
+    ingress_base_domain = env_vars.get("INGRESS_DOMAIN", "scratchpad.movementnetwork.xyz")
+    ingress_domain = f"{chain_name}.{ingress_base_domain}"
+
+    if ingress_enabled:
+        ingress_hostname = f"{service_name}.{ingress_domain}"
+        set_values.update({
+            "ingress.enabled": "true",
+            "ingress.hostname": ingress_hostname,
+            "ingress.className": "nginx",
+            "ingress.tls.enabled": "true",
+            # TLS secret uses chart default (wildcard-tls) unless INGRESS_TLS_SECRET is set
+        })
+        if env_vars.get("INGRESS_TLS_SECRET"):
+            set_values["ingress.tls.wildcardSecretName"] = env_vars["INGRESS_TLS_SECRET"]
 
     # Add bootstrap if enabled
     if outputs.get("fullnode_bootstrap_enabled"):
@@ -145,12 +172,18 @@ def deploy(env_vars: dict, force_create: bool, validate: bool) -> None:
     outputs = cluster.terraform.get_outputs() or {}
     helm_config = build_helm_config(env_vars, outputs)
 
+    # Check if ingress is requested
+    ingress_enabled = outputs.get("ingress_enabled", False)
+    if not ingress_enabled:
+        ingress_enabled = env_vars.get("INGRESS_ENABLED", "false").lower() in ("true", "1", "yes")
+
     cluster.deploy(
         env_vars=env_vars,
         terraform_vars=terraform_vars,
         helm_config=helm_config,
         skip_if_exists=not force_create,
         validate=validate,
+        ingress_enabled=ingress_enabled,
     )
 
 

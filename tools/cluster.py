@@ -44,6 +44,7 @@ class ClusterManager:
         helm_config: dict[str, Any],
         skip_if_exists: bool = True,
         validate: bool = False,
+        ingress_enabled: bool = False,
     ) -> dict[str, Any]:
         """
         Deploy infrastructure and workload.
@@ -60,6 +61,7 @@ class ClusterManager:
                 - set_files: Dict of Helm set-file values
             skip_if_exists: Skip infra creation if cluster exists
             validate: Whether to validate deployment after completion
+            ingress_enabled: Whether ingress is requested for this deployment
 
         Returns:
             Dictionary of deployment information
@@ -75,11 +77,16 @@ class ClusterManager:
         )
         region = outputs.get("region") or terraform_vars.get("region", "us-east-1")
 
+        # Check if ingress needs provisioning (requested but not yet deployed)
+        ingress_needs_provisioning = ingress_enabled and not outputs.get("ingress_enabled", False)
+
         # Check if cluster exists
         eks = EKSManager(cluster_name, region)
-        if skip_if_exists and eks.cluster_exists():
+        if skip_if_exists and eks.cluster_exists() and not ingress_needs_provisioning:
             success(f"Infrastructure already exists (cluster: {cluster_name}, region: {region})")
         else:
+            if ingress_needs_provisioning:
+                info("Ingress enabled but not yet provisioned, running Terraform")
             # Provision infrastructure
             self.terraform.init(upgrade=True)
             self.terraform.validate()
@@ -137,6 +144,12 @@ class ClusterManager:
         max_retries = int(env_vars.get("MAX_RETRIES", "60"))
         retry_interval = int(env_vars.get("RETRY_INTERVAL", "10"))
 
+        # Extract ingress hostname from helm config if ingress is enabled
+        ingress_hostname = None
+        if ingress_enabled:
+            set_values = helm_config.get("set_values", {})
+            ingress_hostname = set_values.get("ingress.hostname")
+
         validate_deployment(
             namespace=namespace,
             service_name=service_name,
@@ -144,6 +157,8 @@ class ClusterManager:
             lb_retries=max_retries,
             interval=retry_interval,
             validate_api=validate,
+            ingress_enabled=ingress_enabled,
+            ingress_hostname=ingress_hostname,
         )
 
         success("Deployment completed successfully!")
