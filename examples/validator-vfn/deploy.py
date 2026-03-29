@@ -153,6 +153,8 @@ def build_terraform_vars(env_vars: dict) -> dict:
     variables = {}
 
     validator_name = env_vars.get("VALIDATOR_NAME", "validator-01")
+    enable_ingress = env_vars.get("INGRESS_ENABLED", "false").lower() in ("true", "1", "yes")
+    ingress_base_domain = env_vars.get("INGRESS_DOMAIN", "scratchpad.movementnetwork.xyz")
     variables["validator_name"] = validator_name
     if "AWS_REGION" in env_vars:
         variables["region"] = env_vars["AWS_REGION"]
@@ -162,8 +164,9 @@ def build_terraform_vars(env_vars: dict) -> dict:
     # DNS configuration
     enable_dns = env_vars.get("ENABLE_DNS", "false").lower() in ("true", "1", "yes")
     variables["enable_dns"] = enable_dns
-    if enable_dns and "DNS_ZONE_NAME" in env_vars:
-        variables["dns_zone_name"] = env_vars["DNS_ZONE_NAME"]
+    if enable_dns:
+        dns_zone_name = env_vars.get("DNS_ZONE_NAME") or (ingress_base_domain if enable_ingress else "")
+        variables["dns_zone_name"] = dns_zone_name
     else:
         variables["dns_zone_name"] = ""
 
@@ -198,11 +201,10 @@ def build_terraform_vars(env_vars: dict) -> dict:
     variables["tags"] = {"Validator": validator_name}
 
     # Ingress configuration
-    enable_ingress = env_vars.get("INGRESS_ENABLED", "false").lower() in ("true", "1", "yes")
     variables["enable_ingress"] = enable_ingress
     if enable_ingress:
         variables["chain_name"] = env_vars.get("CHAIN_NAME", "testnet")
-        variables["ingress_domain"] = env_vars.get("INGRESS_DOMAIN", "scratchpad.movementnetwork.xyz")
+        variables["ingress_domain"] = ingress_base_domain
 
     return variables
 
@@ -457,28 +459,6 @@ def deploy(env_vars: dict, force_create: bool, validate: bool, terraform_dir: Pa
         info("  → 2-tier setup: External clients access VFN")
     else:
         info("  → Validator-only setup: No public access")
-
-    # Step 1: Provision infrastructure
-    terraform_vars = build_terraform_vars(env_vars)
-    outputs = cluster.terraform.get_outputs() or {}
-    # Check if validator should be public (for cross-cluster validator communication)
-    validator_public = env_vars.get("VALIDATOR_PUBLIC", "false").lower() in ("true", "1", "yes")
-    validator_service_type = "LoadBalancer" if validator_public else "ClusterIP"
-
-    # Display deployment plan
-    info("Deployment Topology:")
-    validator_access = "LoadBalancer - public" if validator_public else "ClusterIP - private"
-    info(f"  Validator: {validator_name} ({validator_access})")
-    if deploy_vfn and deploy_fullnode:
-        info(f"  VFN: {vfn_name} (ClusterIP - private)")
-        info(f"  Fullnode: {fullnode_name} (LoadBalancer - public)")
-        info("  → 3-tier setup: External clients access fullnode")
-    elif deploy_vfn:
-        info(f"  VFN: {vfn_name} (LoadBalancer - public)")
-        info("  → 2-tier setup: External clients access VFN")
-    else:
-        validator_note = "Public for P2P" if validator_public else "No public access"
-        info(f"  → Validator-only setup: {validator_note}")
 
     # Step 1: Provision infrastructure
     terraform_vars = build_terraform_vars(env_vars)
