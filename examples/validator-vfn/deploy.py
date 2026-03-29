@@ -197,6 +197,13 @@ def build_terraform_vars(env_vars: dict) -> dict:
     variables["node_max_size"] = node_count + 2
     variables["tags"] = {"Validator": validator_name}
 
+    # Ingress configuration
+    enable_ingress = env_vars.get("INGRESS_ENABLED", "false").lower() in ("true", "1", "yes")
+    variables["enable_ingress"] = enable_ingress
+    if enable_ingress:
+        variables["chain_name"] = env_vars.get("CHAIN_NAME", "testnet")
+        variables["ingress_domain"] = env_vars.get("INGRESS_DOMAIN", "scratchpad.movementnetwork.xyz")
+
     return variables
 
 
@@ -254,6 +261,8 @@ def deploy_node(
     vfn_service: str | None = None,
     validator_keys_secret: str | None = None,
     vfn_keys_secret: str | None = None,
+    ingress_enabled: bool = False,
+    ingress_hostname: str | None = None,
 ) -> None:
     """Deploy a single node with appropriate configuration."""
     info(f"Deploying {node_type}: {node_name}")
@@ -327,6 +336,17 @@ def deploy_node(
     if service_type:
         set_values["service.type"] = service_type
         info(f"  Service type: {service_type}")
+
+    # Ingress configuration for TLS termination
+    if ingress_enabled and ingress_hostname:
+        set_values["ingress.enabled"] = "true"
+        set_values["ingress.hostname"] = ingress_hostname
+        set_values["ingress.className"] = "nginx"
+        set_values["ingress.tls.enabled"] = "true"
+        # Only override TLS secret if explicitly set; otherwise use chart default (wildcard-tls)
+        if env_vars.get("INGRESS_TLS_SECRET"):
+            set_values["ingress.tls.wildcardSecretName"] = env_vars["INGRESS_TLS_SECRET"]
+        info(f"  Ingress: https://{ingress_hostname}")
 
     # Node-specific configuration
     if node_type == "validator":
@@ -402,6 +422,12 @@ def deploy(env_vars: dict, force_create: bool, validate: bool, terraform_dir: Pa
     deploy_vfn = env_vars.get("DEPLOY_VFN", "true").lower() in ("true", "1", "yes")
     deploy_fullnode = env_vars.get("DEPLOY_FULLNODE", "false").lower() in ("true", "1", "yes")
 
+    # Ingress configuration for TLS
+    ingress_enabled = env_vars.get("INGRESS_ENABLED", "false").lower() in ("true", "1", "yes")
+    chain_name = env_vars.get("CHAIN_NAME", "testnet")
+    ingress_base_domain = env_vars.get("INGRESS_DOMAIN", "scratchpad.movementnetwork.xyz")
+    ingress_domain = f"{chain_name}.{ingress_base_domain}"
+
     # Deployment names
     validator_name = env_vars.get("VALIDATOR_NAME", "validator-01")
     vfn_name = env_vars.get("VFN_NAME", "vfn-01")
@@ -413,7 +439,16 @@ def deploy(env_vars: dict, force_create: bool, validate: bool, terraform_dir: Pa
     # Display deployment plan
     info("Deployment Topology:")
     info(f"  Validator: {validator_name} (ClusterIP - private)")
-    if deploy_vfn and deploy_fullnode:
+    if ingress_enabled:
+        info(f"  Ingress: ENABLED (TLS via *.{ingress_domain})")
+        if deploy_vfn and deploy_fullnode:
+            info(f"  VFN: {vfn_name} (ClusterIP → Ingress)")
+            info(f"  Fullnode: {fullnode_name} (ClusterIP → Ingress)")
+            info("  → 3-tier setup: External clients access via HTTPS ingress")
+        elif deploy_vfn:
+            info(f"  VFN: {vfn_name} (ClusterIP → Ingress)")
+            info("  → 2-tier setup: External clients access VFN via HTTPS ingress")
+    elif deploy_vfn and deploy_fullnode:
         info(f"  VFN: {vfn_name} (ClusterIP - private)")
         info(f"  Fullnode: {fullnode_name} (LoadBalancer - public)")
         info("  → 3-tier setup: External clients access fullnode")
@@ -449,9 +484,17 @@ def deploy(env_vars: dict, force_create: bool, validate: bool, terraform_dir: Pa
     terraform_vars = build_terraform_vars(env_vars)
     outputs = cluster.terraform.get_outputs() or {}
 
-    if not force_create and outputs:
+    # Check if we need to run Terraform:
+    # - force_create is set
+    # - no outputs exist (fresh deployment)
+    # - ingress requested but not yet provisioned
+    ingress_needs_provisioning = ingress_enabled and not outputs.get("ingress_enabled", False)
+
+    if not force_create and outputs and not ingress_needs_provisioning:
         info("Infrastructure already exists, skipping Terraform")
     else:
+        if ingress_needs_provisioning:
+            info("Ingress enabled but not yet provisioned, running Terraform")
         cluster.terraform.init(upgrade=True)
         cluster.terraform.validate()
         var_args = cluster.terraform.build_var_args(terraform_vars)
@@ -470,6 +513,10 @@ def deploy(env_vars: dict, force_create: bool, validate: bool, terraform_dir: Pa
     eks = EKSManager(cluster_name, region, profile)
     eks.wait_until_active()
     eks.update_kubeconfig()
+
+    # Update ingress_enabled from terraform outputs (actual provisioned state)
+    # Note: ingress_domain is NOT updated from outputs - it uses chain_name + base domain
+    ingress_enabled = outputs.get("ingress_enabled", ingress_enabled)
 
     # Step 1.5: Create identity secrets from local files
     info("\n" + "=" * 80)
@@ -520,8 +567,14 @@ def deploy(env_vars: dict, force_create: bool, validate: bool, terraform_dir: Pa
 
     # Deploy VFN if requested
     if deploy_vfn:
-        # VFN service type depends on whether fullnode is deployed
-        vfn_service_type = "ClusterIP" if deploy_fullnode else "LoadBalancer"
+        # VFN service type: ClusterIP if fullnode deployed OR ingress enabled, else LoadBalancer
+        if ingress_enabled or deploy_fullnode:
+            vfn_service_type = None  # Let Helm chart decide (ClusterIP when ingress enabled)
+        else:
+            vfn_service_type = "LoadBalancer"
+
+        # Build ingress hostname for VFN
+        vfn_ingress_hostname = f"{vfn_name}.{ingress_domain}" if ingress_enabled and ingress_domain else None
 
         deploy_node(
             helm=helm,
@@ -533,10 +586,18 @@ def deploy(env_vars: dict, force_create: bool, validate: bool, terraform_dir: Pa
             service_type=vfn_service_type,
             validator_service=validator_name,
             vfn_keys_secret=vfn_keys_secret,
+            ingress_enabled=ingress_enabled,
+            ingress_hostname=vfn_ingress_hostname,
         )
 
     # Deploy fullnode if requested
     if deploy_fullnode:
+        # Fullnode service type: ClusterIP if ingress enabled, else LoadBalancer
+        fullnode_service_type = None if ingress_enabled else "LoadBalancer"
+
+        # Build ingress hostname for fullnode
+        fullnode_ingress_hostname = f"{fullnode_name}.{ingress_domain}" if ingress_enabled and ingress_domain else None
+
         deploy_node(
             helm=helm,
             node_type="fullnode",
@@ -544,8 +605,10 @@ def deploy(env_vars: dict, force_create: bool, validate: bool, terraform_dir: Pa
             namespace=namespace,
             validator_name=validator_name,
             env_vars=env_vars,
-            service_type="LoadBalancer",
+            service_type=fullnode_service_type,
             vfn_service=vfn_name if deploy_vfn else None,
+            ingress_enabled=ingress_enabled,
+            ingress_hostname=fullnode_ingress_hostname,
         )
 
     # Step 3: Validation (if requested)
@@ -574,6 +637,7 @@ def deploy(env_vars: dict, force_create: bool, validate: bool, terraform_dir: Pa
         # Final validation: check public endpoint if available
         if deploy_fullnode or deploy_vfn:
             validate_service = fullnode_name if deploy_fullnode else vfn_name
+            validate_hostname = f"{validate_service}.{ingress_domain}" if ingress_enabled else None
 
             info(f"\nValidating public endpoint: {validate_service}")
             validate_deployment(
@@ -581,6 +645,8 @@ def deploy(env_vars: dict, force_create: bool, validate: bool, terraform_dir: Pa
                 service_name=validate_service,
                 pod_timeout=3600,
                 lb_retries=60,
+                ingress_enabled=ingress_enabled,
+                ingress_hostname=validate_hostname,
             )
 
     success("Deployment complete!")
@@ -590,7 +656,14 @@ def deploy(env_vars: dict, force_create: bool, validate: bool, terraform_dir: Pa
     info("Access Information:")
     info("=" * 80)
 
-    if deploy_fullnode:
+    if ingress_enabled:
+        info("\n🔒 Public Access: HTTPS via Ingress")
+        if deploy_fullnode:
+            info(f"   Fullnode: https://{fullnode_name}.{ingress_domain}")
+        if deploy_vfn:
+            info(f"   VFN: https://{vfn_name}.{ingress_domain}")
+        info(f"   kubectl get ingress -n {namespace}")
+    elif deploy_fullnode:
         info("\n🌐 Public Access: Fullnode LoadBalancer")
         info(f"   Service: {fullnode_name}")
         info(f"   kubectl get svc {fullnode_name} -n {namespace}")

@@ -81,3 +81,22 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+# Ingress Configuration
+variable "enable_ingress" {
+  description = "Enable NGINX Ingress Controller with TLS for VFN/fullnode access"
+  type        = bool
+  default     = false
+}
+
+variable "chain_name" {
+  description = "Chain/network name for ingress subdomain (e.g., testnet, mainnet)"
+  type        = string
+  default     = "testnet"
+}
+
+variable "ingress_domain" {
+  description = "Base domain for ingress (Route53 zone)"
+  type        = string
+  default     = "scratchpad.movementnetwork.xyz"
+}

@@ -93,8 +93,40 @@ class TerraformManager:
             if var_args:
                 cmd.extend(var_args)
 
-        run_command(cmd, cwd=self.working_dir)
+        # Run with check=False to handle errors with better guidance
+        proc = run_command(cmd, cwd=self.working_dir, capture=True, check=False)
+
+        if proc.returncode != 0:
+            output = (proc.stderr or "") + (proc.stdout or "")
+            self._handle_apply_error(output)
+
         success("Terraform applied successfully")
+
+    def _handle_apply_error(self, output: str) -> None:
+        """Handle terraform apply errors with actionable guidance."""
+        # Check for known transient errors
+        if "no matching ELB found" in output or "no matching EC2 Load Balancer found" in output:
+            warn("\n" + "=" * 70)
+            warn("NLB not yet provisioned by AWS.")
+            warn("This is expected on first run - AWS needs 2-5 minutes to create the NLB.")
+            warn("\nTo retry:")
+            warn("  1. Wait 2-3 minutes for AWS to provision the NLB")
+            warn("  2. Rerun the deploy command")
+            warn("=" * 70 + "\n")
+            fail("Terraform apply failed: NLB not ready (rerun after waiting)")
+
+        if "Error acquiring the state lock" in output:
+            warn("\n" + "=" * 70)
+            warn("Terraform state is locked.")
+            warn("This may happen if a previous run was interrupted.")
+            warn("\nTo resolve:")
+            warn("  1. Verify no other terraform process is running")
+            warn("  2. If safe, run: terraform force-unlock <LOCK_ID>")
+            warn("=" * 70 + "\n")
+            fail("Terraform apply failed: state locked")
+
+        # Generic error - print output and fail
+        fail(f"Terraform apply failed:\n{output}")
 
     def destroy(
         self, var_args: list[str] | None = None, auto_approve: bool = True, refresh: bool = False
