@@ -361,6 +361,20 @@ This unified approach:
 - ✅ Simplifies maintenance
 - ✅ Enables easy configuration
 
+### Platform Ownership
+
+NodeInfra is the source of truth for platform behavior such as ingress, TLS termination, DNS integration, and provider compatibility.
+
+External validator repositories should treat NodeInfra as the reusable platform layer and keep only validator-specific configuration locally, such as:
+
+- `DNS_ZONE_NAME`
+- `CHAIN_NAME`
+- `INGRESS_DOMAIN`
+- secrets and environment values
+- deployment selection and operational wrappers
+
+Platform logic should not be re-implemented in downstream Terraform roots. When ingress or TLS behavior changes, the fix should land in NodeInfra once and downstream consumers should inherit it by updating their NodeInfra integration rather than copying the logic.
+
 ## Deployment Tools
 
 The `tools/` package provides reusable Python modules for infrastructure automation:

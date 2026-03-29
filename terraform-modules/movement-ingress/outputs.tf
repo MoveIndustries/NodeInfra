@@ -30,7 +30,7 @@ output "ingress_class_name" {
 
 output "load_balancer_hostname" {
   description = "NLB hostname for the NGINX Ingress Controller"
-  value       = data.aws_lb.nginx_ingress.dns_name
+  value       = data.kubernetes_service_v1.nginx_ingress.status[0].load_balancer[0].ingress[0].hostname
 }
 
 output "wildcard_dns_record" {

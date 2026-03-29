@@ -437,10 +437,13 @@ def deploy(env_vars: dict, force_create: bool, validate: bool, terraform_dir: Pa
     namespace = env_vars.get("NAMESPACE", "movement-l1")
     validator_keys_secret = env_vars.get("VALIDATOR_KEYS_SECRET", "validator-identity")
     vfn_keys_secret = env_vars.get("VFN_KEYS_SECRET", "vfn-identity")
+    validator_public = env_vars.get("VALIDATOR_PUBLIC", "false").lower() in ("true", "1", "yes")
+    validator_service_type = "LoadBalancer" if validator_public else "ClusterIP"
 
     # Display deployment plan
     info("Deployment Topology:")
-    info(f"  Validator: {validator_name} (ClusterIP - private)")
+    validator_access = "LoadBalancer - public" if validator_public else "ClusterIP - private"
+    info(f"  Validator: {validator_name} ({validator_access})")
     if ingress_enabled:
         info(f"  Ingress: ENABLED (TLS via *.{ingress_domain})")
         if deploy_vfn and deploy_fullnode:

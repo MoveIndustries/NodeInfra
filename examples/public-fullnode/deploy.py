@@ -33,12 +33,16 @@ def build_terraform_vars(env_vars: dict) -> dict:
     if "VPC_CIDR" in env_vars:
         variables["vpc_cidr"] = env_vars["VPC_CIDR"]
 
+    enable_ingress = env_vars.get("INGRESS_ENABLED", "false").lower() in ("true", "1", "yes")
+    ingress_base_domain = env_vars.get("INGRESS_DOMAIN", "scratchpad.movementnetwork.xyz")
+
     # DNS configuration
     enable_dns = env_vars.get("ENABLE_DNS", "false").lower() in ("true", "1", "yes")
     variables["enable_dns"] = enable_dns
     if enable_dns:
-        if "DNS_ZONE_NAME" in env_vars:
-            variables["dns_zone_name"] = env_vars["DNS_ZONE_NAME"]
+        variables["dns_zone_name"] = env_vars.get("DNS_ZONE_NAME") or (
+            ingress_base_domain if enable_ingress else ""
+        )
         if "FULLNODE_DNS_NAME" in env_vars:
             variables["fullnode_dns_name"] = env_vars["FULLNODE_DNS_NAME"]
     else:
@@ -60,11 +64,10 @@ def build_terraform_vars(env_vars: dict) -> dict:
         ]
 
     # Ingress configuration
-    enable_ingress = env_vars.get("INGRESS_ENABLED", "false").lower() in ("true", "1", "yes")
     variables["enable_ingress"] = enable_ingress
     if enable_ingress:
         variables["chain_name"] = env_vars.get("CHAIN_NAME", "testnet")
-        variables["ingress_domain"] = env_vars.get("INGRESS_DOMAIN", "scratchpad.movementnetwork.xyz")
+        variables["ingress_domain"] = ingress_base_domain
 
     return variables
 
