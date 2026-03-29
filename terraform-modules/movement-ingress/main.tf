@@ -160,17 +160,25 @@ resource "kubectl_manifest" "wildcard_certificate" {
 data "aws_region" "current" {}
 
 # NOTE: NLB provisioning is asynchronous. After helm_release.nginx_ingress completes,
-# AWS needs 2-5 minutes to provision the actual NLB. If the first terraform apply fails
-# with "no matching ELB found", wait a few minutes and rerun. This is expected behavior.
-#
-# The data source lookup will fail fast if NLB doesn't exist yet, which is preferable
-# to blocking with arbitrary sleep times that may still be insufficient.
-
-# Get the NLB by name (set via service annotation)
-data "aws_lb" "nginx_ingress" {
-  name = local.nlb_name
+# AWS needs 2-5 minutes to provision the actual NLB. We discover the load balancer
+# via the ingress controller Service and the AWS service tag rather than assuming
+# the requested semantic name becomes the final AWS LB name.
+data "kubernetes_service_v1" "nginx_ingress" {
+  metadata {
+    name      = "ingress-nginx-controller"
+    namespace = var.ingress_namespace
+  }
 
   depends_on = [helm_release.nginx_ingress]
+}
+
+# Get the NLB from the stable service tag applied by the Kubernetes service controller.
+data "aws_lb" "nginx_ingress" {
+  tags = {
+    "kubernetes.io/service-name" = "${var.ingress_namespace}/ingress-nginx-controller"
+  }
+
+  depends_on = [data.kubernetes_service_v1.nginx_ingress]
 }
 
 # Create DNS record for the wildcard domain pointing to the NLB
