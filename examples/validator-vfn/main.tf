@@ -17,7 +17,7 @@ module "network" {
   region         = var.region
   vpc_cidr       = var.vpc_cidr
   dns_enabled    = var.enable_dns || var.enable_ingress
-  dns_zone_name  = var.enable_dns || var.enable_ingress ? var.ingress_domain : ""
+  dns_zone_name  = var.enable_ingress ? var.ingress_domain : (var.enable_dns ? var.dns_zone_name : "")
 
   tags = merge(
     var.tags,
