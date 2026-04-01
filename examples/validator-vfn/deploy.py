@@ -24,6 +24,7 @@ from tools import ClusterManager, HelmManager, error, info, run_deployment_cli, 
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT_DIR = SCRIPT_DIR.parents[1]
 CHART_DIR = ROOT_DIR / "charts" / "movement-node"
+PROMETHEUS_AGENT_CHART_DIR = ROOT_DIR / "charts" / "prometheus-agent"
 
 # Default VFN connection keys (validator's fullnode-network identity)
 # These are used for the internal V ↔ VFN private connection
@@ -393,6 +394,54 @@ def deploy_node(
     success(f"{node_type.upper()} '{node_name}' deployed successfully")
 
 
+def deploy_prometheus_agent(
+    env_vars: dict,
+    namespace: str,
+    cluster_name: str,
+) -> None:
+    """Deploy Prometheus Agent for metrics collection and push to Mimir."""
+    from tools.helm import HelmManager
+
+    info("Deploying Prometheus Agent for metrics push")
+
+    # Get Mimir configuration
+    mimir_url = env_vars.get("MIMIR_URL", "").strip()
+    mimir_username = env_vars.get("MIMIR_USERNAME", "").strip()
+    mimir_password = env_vars.get("MIMIR_PASSWORD", "").strip()
+
+    if not mimir_url:
+        error("MIMIR_URL not set, skipping Prometheus Agent deployment")
+        return
+
+    if not mimir_username or not mimir_password:
+        error("MIMIR_USERNAME or MIMIR_PASSWORD not set, skipping Prometheus Agent deployment")
+        return
+
+    region = env_vars.get("AWS_REGION", "us-east-1")
+    environment = env_vars.get("NETWORK_NAME", "testnet")
+
+    set_values = {
+        "externalLabels.cluster": cluster_name,
+        "externalLabels.environment": environment,
+        "externalLabels.region": region,
+        "remoteWrite.url": mimir_url,
+        "remoteWrite.basicAuth.username": mimir_username,
+        "remoteWrite.basicAuth.password": mimir_password,
+        "scrape.namespaces": namespace,
+    }
+
+    helm = HelmManager(PROMETHEUS_AGENT_CHART_DIR)
+    helm.upgrade_install(
+        release_name="prometheus-agent",
+        namespace=namespace,
+        create_namespace=False,
+        reset_values=True,
+        set_values=set_values,
+    )
+
+    success("Prometheus Agent deployed successfully")
+
+
 def deploy(env_vars: dict, force_create: bool, validate: bool, terraform_dir: Path | None = None) -> None:
     """Deploy validator cluster with intelligent topology handling."""
     tf_dir = terraform_dir or SCRIPT_DIR
@@ -548,6 +597,15 @@ def deploy(env_vars: dict, force_create: bool, validate: bool, terraform_dir: Pa
             vfn_service=vfn_name if deploy_vfn else None,
         )
 
+    # Deploy Prometheus Agent if monitoring is enabled
+    deploy_monitoring = env_vars.get("DEPLOY_MONITORING", "false").lower() in ("true", "1", "yes")
+    if deploy_monitoring:
+        deploy_prometheus_agent(
+            env_vars=env_vars,
+            namespace=namespace,
+            cluster_name=validator_name,
+        )
+
     # Step 3: Validation (if requested)
     if validate:
         from tools.validation import validate_deployment, wait_for_pods_ready
@@ -627,6 +685,9 @@ def destroy(env_vars: dict, terraform_dir: Path | None = None) -> None:
     deploy_fullnode = env_vars.get("DEPLOY_FULLNODE", "false").lower() in ("true", "1", "yes")
 
     # Uninstall Helm releases in reverse order
+    deploy_monitoring = env_vars.get("DEPLOY_MONITORING", "false").lower() in ("true", "1", "yes")
+    if deploy_monitoring:
+        helm.uninstall("prometheus-agent", namespace)
     if deploy_fullnode:
         helm.uninstall(fullnode_name, namespace)
     if deploy_vfn:

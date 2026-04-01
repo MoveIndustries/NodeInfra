@@ -1,0 +1,46 @@
+# Prometheus Agent - scrapes pods, pushes to Mimir
+# Deployed per-cluster to collect metrics from all movement nodes
+
+image:
+  repository: prom/prometheus
+  tag: v2.51.0
+  pullPolicy: IfNotPresent
+
+# External labels added to all metrics (REQUIRED)
+# These identify which cluster/environment metrics come from
+externalLabels:
+  cluster: ""           # e.g., "validator-08"
+  environment: "testnet"
+  region: ""            # e.g., "us-west-2"
+
+# Remote write to Mimir (REQUIRED)
+remoteWrite:
+  url: ""               # e.g., "https://mimir.us-west-2.testnet.movementinfra.xyz/api/v1/push"
+  basicAuth:
+    username: ""
+    password: ""
+
+# Scrape configuration
+scrape:
+  interval: 15s
+  timeout: 10s
+  # Scrape pods in these namespaces (comma-separated or empty for all)
+  namespaces: "movement-l1"
+
+# Resources
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# Service account for pod discovery
+serviceAccount:
+  create: true
+  name: ""
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

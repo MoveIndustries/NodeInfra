@@ -1,0 +1,6 @@
+apiVersion: v2
+name: prometheus-agent
+description: Prometheus Agent for scraping pods and pushing metrics to Mimir
+type: application
+version: 0.1.0
+appVersion: "2.51.0"

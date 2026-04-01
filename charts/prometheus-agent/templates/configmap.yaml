@@ -1,0 +1,66 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "prometheus-agent.fullname" . }}
+  labels:
+    {{- include "prometheus-agent.labels" . | nindent 4 }}
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: {{ .Values.scrape.interval }}
+      scrape_timeout: {{ .Values.scrape.timeout }}
+      external_labels:
+        cluster: {{ .Values.externalLabels.cluster | quote }}
+        environment: {{ .Values.externalLabels.environment | quote }}
+        region: {{ .Values.externalLabels.region | quote }}
+
+    remote_write:
+      - url: {{ .Values.remoteWrite.url | quote }}
+        basic_auth:
+          username: {{ .Values.remoteWrite.basicAuth.username | quote }}
+          password: {{ .Values.remoteWrite.basicAuth.password | quote }}
+
+    scrape_configs:
+      # Scrape movement node pods with prometheus.io annotations
+      - job_name: 'movement-nodes'
+        kubernetes_sd_configs:
+          - role: pod
+            {{- if .Values.scrape.namespaces }}
+            namespaces:
+              names:
+                {{- range (splitList "," .Values.scrape.namespaces) }}
+                - {{ . | trim | quote }}
+                {{- end }}
+            {{- end }}
+        relabel_configs:
+          # Only scrape pods with prometheus.io/scrape=true
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          # Use prometheus.io/port annotation for port
+          - source_labels: [__meta_kubernetes_pod_ip, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            target_label: __address__
+            regex: (.+);(.+)
+            replacement: $1:$2
+          # Use prometheus.io/path annotation for path
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          # Add pod metadata as labels
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+            target_label: app
+          # Add node_type label from pod label (movementnetwork.xyz/node_type)
+          - source_labels: [__meta_kubernetes_pod_label_movementnetwork_xyz_node_type]
+            target_label: node_type
+          # Add node_name label from pod label (movementnetwork.xyz/node)
+          - source_labels: [__meta_kubernetes_pod_label_movementnetwork_xyz_node]
+            target_label: node_name
+          # Add network label
+          - source_labels: [__meta_kubernetes_pod_label_movementnetwork_xyz_network]
+            target_label: network
