@@ -264,17 +264,19 @@ def deploy_node(
         "1",
         "yes",
     )
-    bootstrap_s3_bucket = str(
-        env_vars.get("BOOTSTRAP_S3_BUCKET", "movement-2026-02-28-backup")
+    bootstrap_s3_bucket = str(env_vars.get("BOOTSTRAP_S3_BUCKET", "")).strip()
+    bootstrap_s3_prefix = str(env_vars.get("BOOTSTRAP_S3_PREFIX", "")).strip().strip("/")
+    bootstrap_s3_region = str(
+        env_vars.get("BOOTSTRAP_S3_REGION", env_vars.get("AWS_REGION", "us-east-1"))
     ).strip()
-    bootstrap_s3_prefix = str(env_vars.get("BOOTSTRAP_S3_PREFIX", "testnet/db")).strip().strip("/")
-    bootstrap_s3_region = str(env_vars.get("BOOTSTRAP_S3_REGION", "us-west-2")).strip()
 
     # Docker image configuration (defaults match values.yaml)
     docker_image_repo = env_vars.get(
         "DOCKER_IMAGE_REPOSITORY", "ghcr.io/movementlabsxyz/aptos-node"
     ).strip()
     docker_image_tag = env_vars.get("DOCKER_IMAGE_TAG", "latest").strip()
+    network_name = str(env_vars.get("NETWORK_NAME", "testnet")).strip()
+    chain_id = str(env_vars.get("CHAIN_ID", "250")).strip()
 
     # Base configuration with S3 bootstrap for all nodes
     set_values = {
@@ -282,8 +284,8 @@ def deploy_node(
         "node.name": node_name,
         "image.repository": docker_image_repo,
         "image.tag": docker_image_tag,
-        "network.name": "testnet",
-        "network.chainId": "250",
+        "network.name": network_name,
+        "network.chainId": chain_id,
         "storage.create": "true" if node_type == "validator" else "false",
         "storage.storageClassName": "gp3",
         "storage.parameters.type": "gp3",
